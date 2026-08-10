@@ -11,6 +11,8 @@ This is similar to the command of `cmd+shift+b` in Atom.
 
 ![feature](https://i.gyazo.com/2caaabfa6980757cd9888ae3946e4993.png)
 
+In multi-root workspaces, changed files from every folder are listed in one Quick Pick, grouped by workspace folder name. Each file also shows its change status letter and addition/deletion counts (for example `M  +12 −3`).
+
 ## Commands
 
 - `quick-open-git-status.open`
@@ -18,7 +20,3 @@ This is similar to the command of `cmd+shift+b` in Atom.
 ## Keymaps
 
 No keymap by default.
-
-## TODO
-
-- [ ] Multiple workspace folders
