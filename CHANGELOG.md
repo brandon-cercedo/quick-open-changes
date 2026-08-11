@@ -4,6 +4,13 @@ All notable changes to the "quick-open-git-status" extension will be documented 
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.3.3]
+
+- Show filename as the primary label (like Quick Open)
+- Show `folder • Modified +N -M` as muted description text
+- Remove file icons (host did not apply file icon theme icons in Quick Pick)
+- Add hover buttons to stage or discard changes (SCM-style)
+
 ## [0.3.2]
 
 - Use file icon theme icons via `ThemeIcon.File` + `resourceUri`

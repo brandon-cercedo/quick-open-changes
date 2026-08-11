@@ -2,7 +2,7 @@
   "name": "quick-open-git-status",
   "displayName": "Quick Open Git Status",
   "description": "Quickly opening changes files.",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "publisher": "aki77",
   "license": "MIT",
   "engines": {

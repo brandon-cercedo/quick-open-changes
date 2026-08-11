@@ -13,9 +13,9 @@ This is similar to the command of `cmd+shift+b` in Atom.
 
 In multi-root workspaces, changed files from every folder are listed in one Quick Pick, grouped by workspace folder name. Each row shows:
 
-- The file icon from your current file icon theme
-- The relative path
-- Status and plain `+` / `-` counts at the end of the row (for example `M  +12 -3`)
+- The **file name** as the primary label (like Quick Open)
+- A muted description: `folder/path • Modified +12 -3`
+- Hover buttons to **Stage Changes** or **Discard Changes** (with confirmation on discard)
 
 ## Commands
 
