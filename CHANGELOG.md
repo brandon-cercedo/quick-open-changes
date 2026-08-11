@@ -4,6 +4,12 @@ All notable changes to the "quick-open-git-status" extension will be documented 
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.3.1]
+
+- Always show green `+` / red `-` counts (not only on hover)
+- Use plain `+` / `-` characters instead of boxed diff codicons
+- Show file-type icons in the label alongside the colored counts badge
+
 ## [0.3.0]
 
 - Show file icons from the current file icon theme

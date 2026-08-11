@@ -1,7 +1,6 @@
 import {
   commands,
   ExtensionContext,
-  QuickInputButton,
   QuickPickItem,
   QuickPickItemKind,
   ThemeIcon,
@@ -12,6 +11,7 @@ import {
 } from 'vscode';
 import simpleGit, { SimpleGit, FileStatusResult } from 'simple-git';
 import { promises as fs } from 'fs';
+import * as path from 'path';
 import { sortStringPropertyDESC } from 'typesafe-utils';
 
 type DiffStats = {
@@ -31,9 +31,6 @@ type FileQuickPickItem = QuickPickItem & {
   status: string;
 };
 
-// Item-button alwaysVisible is supported at runtime but omitted from older typings.
-type AlwaysVisibleButton = QuickInputButton & { alwaysVisible?: boolean };
-
 const COLORS = {
   added: { dark: '#3fb950', light: '#1a7f37' },
   deleted: { dark: '#f85149', light: '#cf222e' },
@@ -43,19 +40,93 @@ const COLORS = {
 const svgDataUri = (svg: string): Uri =>
   Uri.parse(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`);
 
-const statsIcon = (
-  text: string,
-  darkColor: string,
-  lightColor: string
-): { light: Uri; dark: Uri } => {
-  const width = Math.max(28, text.length * 8);
-  const make = (color: string) =>
+/**
+ * Always-visible colored "+N -M" badge (plain + / - characters).
+ * QuickPick description text cannot be tinted, and item buttons only show on hover,
+ * so the badge is rendered as iconPath.
+ */
+const coloredStatsIcon = (
+  stats?: DiffStats
+): ThemeIcon | { light: Uri; dark: Uri } => {
+  if (!stats) {
+    return new ThemeIcon('file');
+  }
+  if (stats.binary) {
+    const make = (color: string) =>
+      svgDataUri(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="16" viewBox="0 0 36 16">` +
+          `<text x="0" y="12" fill="${color}" font-family="Segoe UI,monospace" font-size="11">bin</text>` +
+          `</svg>`
+      );
+    return { light: make(COLORS.binary.light), dark: make(COLORS.binary.dark) };
+  }
+
+  const plus = `+${stats.insertions}`;
+  const minus = `-${stats.deletions}`;
+  const width = Math.max(48, (plus.length + minus.length) * 7 + 8);
+  const minusX = plus.length * 7 + 4;
+  const make = (added: string, deleted: string) =>
     svgDataUri(
       `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="16" viewBox="0 0 ${width} 16">` +
-        `<text x="0" y="12" fill="${color}" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="12">${text}</text>` +
+        `<text x="0" y="12" fill="${added}" font-family="Segoe UI,Consolas,monospace" font-size="12">${plus}</text>` +
+        `<text x="${minusX}" y="12" fill="${deleted}" font-family="Segoe UI,Consolas,monospace" font-size="12">${minus}</text>` +
         `</svg>`
     );
-  return { light: make(lightColor), dark: make(darkColor) };
+  return {
+    light: make(COLORS.added.light, COLORS.deleted.light),
+    dark: make(COLORS.added.dark, COLORS.deleted.dark),
+  };
+};
+
+/** Product icons so rows still show a file-type cue while iconPath shows the +/- badge. */
+const fileTypeCodicon = (filePath: string): string => {
+  const base = path.basename(filePath).toLowerCase();
+  const ext = path.extname(base);
+
+  if (base === 'package.json' || base === 'package-lock.json') {
+    return '$(package)';
+  }
+  if (base === 'tsconfig.json' || base === 'jsconfig.json') {
+    return '$(json)';
+  }
+
+  switch (ext) {
+    case '.ts':
+    case '.tsx':
+    case '.mts':
+    case '.cts':
+    case '.js':
+    case '.jsx':
+    case '.mjs':
+    case '.cjs':
+    case '.css':
+    case '.scss':
+    case '.less':
+    case '.html':
+    case '.htm':
+    case '.yml':
+    case '.yaml':
+      return '$(file-code)';
+    case '.json':
+    case '.jsonc':
+      return '$(json)';
+    case '.md':
+    case '.mdx':
+      return '$(markdown)';
+    case '.svg':
+    case '.png':
+    case '.jpg':
+    case '.jpeg':
+    case '.gif':
+    case '.webp':
+      return '$(file-media)';
+    case '.sh':
+    case '.bash':
+    case '.zsh':
+      return '$(terminal)';
+    default:
+      return '$(file)';
+  }
 };
 
 const formatStatsDescription = (status: string, stats?: DiffStats): string => {
@@ -65,40 +136,8 @@ const formatStatsDescription = (status: string, stats?: DiffStats): string => {
   if (stats.binary) {
     return `${status}  binary`;
   }
-  // Codicons plus plain counts (filterable). Colored duplicates also appear as item buttons.
-  return `${status}  $(diff-added)${stats.insertions} $(diff-removed)${stats.deletions}`;
-};
-
-const statsButtons = (stats?: DiffStats): AlwaysVisibleButton[] | undefined => {
-  if (!stats) {
-    return undefined;
-  }
-  if (stats.binary) {
-    return [
-      {
-        iconPath: statsIcon('binary', COLORS.binary.dark, COLORS.binary.light),
-        tooltip: 'Binary file',
-        alwaysVisible: true,
-      },
-    ];
-  }
-
-  const buttons: AlwaysVisibleButton[] = [];
-  if (stats.insertions > 0 || stats.deletions === 0) {
-    buttons.push({
-      iconPath: statsIcon(`+${stats.insertions}`, COLORS.added.dark, COLORS.added.light),
-      tooltip: `${stats.insertions} addition${stats.insertions === 1 ? '' : 's'}`,
-      alwaysVisible: true,
-    });
-  }
-  if (stats.deletions > 0) {
-    buttons.push({
-      iconPath: statsIcon(`−${stats.deletions}`, COLORS.deleted.dark, COLORS.deleted.light),
-      tooltip: `${stats.deletions} deletion${stats.deletions === 1 ? '' : 's'}`,
-      alwaysVisible: true,
-    });
-  }
-  return buttons;
+  // Plain "+" / "-" characters only (no boxed $(diff-*) codicons).
+  return `${status}  +${stats.insertions} -${stats.deletions}`;
 };
 
 const countUntrackedLines = async (filePath: string): Promise<DiffStats | undefined> => {
@@ -220,13 +259,12 @@ const toQuickPickItems = (
         const status = file.working_dir === ' ' ? file.index : file.working_dir;
         const statusLabel = status === '?' ? 'U' : status;
         return {
-          label: file.path,
+          label: `${fileTypeCodicon(file.path)} ${file.path}`,
           description: formatStatsDescription(statusLabel, file.stats),
           uri: file.uri,
           status: statusLabel,
-          iconPath: ThemeIcon.File,
+          iconPath: coloredStatsIcon(file.stats),
           resourceUri: file.uri,
-          buttons: statsButtons(file.stats),
         } as FileQuickPickItem;
       })
       .sort(sortStringPropertyDESC('status'));
@@ -242,47 +280,21 @@ const open = async (): Promise<void> => {
   const showSeparators = (workspace.workspaceFolders?.length ?? 0) > 1;
   const items = toQuickPickItems(files, showSeparators);
 
-  const quickPick = window.createQuickPick();
-  quickPick.matchOnDescription = true;
-  quickPick.placeholder = 'Select a changed file';
-  quickPick.items = items;
-
-  const selected = await new Promise<FileQuickPickItem | undefined>((resolve) => {
-    let settled = false;
-    const settle = (value: FileQuickPickItem | undefined) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      resolve(value);
-    };
-
-    quickPick.onDidAccept(() => {
-      const item = quickPick.selectedItems[0];
-      if (!item || item.kind === QuickPickItemKind.Separator) {
-        settle(undefined);
-      } else {
-        settle(item as FileQuickPickItem);
-      }
-      quickPick.hide();
-    });
-    // Colored +/- buttons are display-only.
-    quickPick.onDidTriggerItemButton(() => undefined);
-    quickPick.onDidHide(() => settle(undefined));
-    quickPick.show();
+  const selectedItem = await window.showQuickPick(items, {
+    matchOnDescription: true,
+    placeHolder: 'Select a changed file',
   });
 
-  quickPick.dispose();
-
-  if (!selected) {
+  if (!selectedItem || selectedItem.kind === QuickPickItemKind.Separator) {
     return;
   }
 
-  if (selected.status === 'D') {
+  const fileItem = selectedItem as FileQuickPickItem;
+  if (fileItem.status === 'D') {
     commands.executeCommand('workbench.scm.focus');
     return;
   }
-  await window.showTextDocument(selected.uri);
+  await window.showTextDocument(fileItem.uri);
 };
 
 export function activate(context: ExtensionContext) {
