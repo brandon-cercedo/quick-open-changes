@@ -11,7 +11,11 @@ This is similar to the command of `cmd+shift+b` in Atom.
 
 ![feature](https://i.gyazo.com/2caaabfa6980757cd9888ae3946e4993.png)
 
-In multi-root workspaces, changed files from every folder are listed in one Quick Pick, grouped by workspace folder name. Each file also shows its change status letter and addition/deletion counts (for example `M  +12 −3`).
+In multi-root workspaces, changed files from every folder are listed in one Quick Pick, grouped by workspace folder name. Each row shows:
+
+- The file icon from your current file icon theme
+- Status letter plus addition/deletion counts (for example `M  +12 −3`)
+- Colored `+` / `−` counts (green additions, red deletions)
 
 ## Commands
 
@@ -20,3 +24,7 @@ In multi-root workspaces, changed files from every folder are listed in one Quic
 ## Keymaps
 
 No keymap by default.
+
+## Requirements
+
+VS Code `1.108.0` or newer (for file icons in Quick Pick via `resourceUri`).

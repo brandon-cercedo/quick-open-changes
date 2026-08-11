@@ -1,8 +1,10 @@
 import {
   commands,
   ExtensionContext,
+  QuickInputButton,
   QuickPickItem,
   QuickPickItemKind,
+  ThemeIcon,
   Uri,
   window,
   workspace,
@@ -29,14 +31,74 @@ type FileQuickPickItem = QuickPickItem & {
   status: string;
 };
 
-const formatStats = (stats?: DiffStats): string => {
+// Item-button alwaysVisible is supported at runtime but omitted from older typings.
+type AlwaysVisibleButton = QuickInputButton & { alwaysVisible?: boolean };
+
+const COLORS = {
+  added: { dark: '#3fb950', light: '#1a7f37' },
+  deleted: { dark: '#f85149', light: '#cf222e' },
+  binary: { dark: '#8b949e', light: '#6e7781' },
+} as const;
+
+const svgDataUri = (svg: string): Uri =>
+  Uri.parse(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`);
+
+const statsIcon = (
+  text: string,
+  darkColor: string,
+  lightColor: string
+): { light: Uri; dark: Uri } => {
+  const width = Math.max(28, text.length * 8);
+  const make = (color: string) =>
+    svgDataUri(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="16" viewBox="0 0 ${width} 16">` +
+        `<text x="0" y="12" fill="${color}" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="12">${text}</text>` +
+        `</svg>`
+    );
+  return { light: make(lightColor), dark: make(darkColor) };
+};
+
+const formatStatsDescription = (status: string, stats?: DiffStats): string => {
   if (!stats) {
-    return '';
+    return status;
   }
   if (stats.binary) {
-    return 'binary';
+    return `${status}  binary`;
   }
-  return `+${stats.insertions} −${stats.deletions}`;
+  // Codicons plus plain counts (filterable). Colored duplicates also appear as item buttons.
+  return `${status}  $(diff-added)${stats.insertions} $(diff-removed)${stats.deletions}`;
+};
+
+const statsButtons = (stats?: DiffStats): AlwaysVisibleButton[] | undefined => {
+  if (!stats) {
+    return undefined;
+  }
+  if (stats.binary) {
+    return [
+      {
+        iconPath: statsIcon('binary', COLORS.binary.dark, COLORS.binary.light),
+        tooltip: 'Binary file',
+        alwaysVisible: true,
+      },
+    ];
+  }
+
+  const buttons: AlwaysVisibleButton[] = [];
+  if (stats.insertions > 0 || stats.deletions === 0) {
+    buttons.push({
+      iconPath: statsIcon(`+${stats.insertions}`, COLORS.added.dark, COLORS.added.light),
+      tooltip: `${stats.insertions} addition${stats.insertions === 1 ? '' : 's'}`,
+      alwaysVisible: true,
+    });
+  }
+  if (stats.deletions > 0) {
+    buttons.push({
+      iconPath: statsIcon(`−${stats.deletions}`, COLORS.deleted.dark, COLORS.deleted.light),
+      tooltip: `${stats.deletions} deletion${stats.deletions === 1 ? '' : 's'}`,
+      alwaysVisible: true,
+    });
+  }
+  return buttons;
 };
 
 const countUntrackedLines = async (filePath: string): Promise<DiffStats | undefined> => {
@@ -136,7 +198,6 @@ const toQuickPickItems = (
     filesByFolder.set(file.folderName, group);
   }
 
-  // Preserve workspace folder order.
   const folderOrder =
     workspace.workspaceFolders?.map((folder) => folder.name) ??
     Array.from(filesByFolder.keys());
@@ -158,13 +219,15 @@ const toQuickPickItems = (
       .map((file) => {
         const status = file.working_dir === ' ' ? file.index : file.working_dir;
         const statusLabel = status === '?' ? 'U' : status;
-        const statsLabel = formatStats(file.stats);
         return {
           label: file.path,
-          description: statsLabel ? `${statusLabel}  ${statsLabel}` : statusLabel,
+          description: formatStatsDescription(statusLabel, file.stats),
           uri: file.uri,
           status: statusLabel,
-        };
+          iconPath: ThemeIcon.File,
+          resourceUri: file.uri,
+          buttons: statsButtons(file.stats),
+        } as FileQuickPickItem;
       })
       .sort(sortStringPropertyDESC('status'));
 
@@ -179,20 +242,47 @@ const open = async (): Promise<void> => {
   const showSeparators = (workspace.workspaceFolders?.length ?? 0) > 1;
   const items = toQuickPickItems(files, showSeparators);
 
-  const selectedItem = await window.showQuickPick(items, {
-    matchOnDescription: true,
+  const quickPick = window.createQuickPick();
+  quickPick.matchOnDescription = true;
+  quickPick.placeholder = 'Select a changed file';
+  quickPick.items = items;
+
+  const selected = await new Promise<FileQuickPickItem | undefined>((resolve) => {
+    let settled = false;
+    const settle = (value: FileQuickPickItem | undefined) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(value);
+    };
+
+    quickPick.onDidAccept(() => {
+      const item = quickPick.selectedItems[0];
+      if (!item || item.kind === QuickPickItemKind.Separator) {
+        settle(undefined);
+      } else {
+        settle(item as FileQuickPickItem);
+      }
+      quickPick.hide();
+    });
+    // Colored +/- buttons are display-only.
+    quickPick.onDidTriggerItemButton(() => undefined);
+    quickPick.onDidHide(() => settle(undefined));
+    quickPick.show();
   });
 
-  if (!selectedItem || selectedItem.kind === QuickPickItemKind.Separator) {
+  quickPick.dispose();
+
+  if (!selected) {
     return;
   }
 
-  const fileItem = selectedItem as FileQuickPickItem;
-  if (fileItem.status === 'D') {
+  if (selected.status === 'D') {
     commands.executeCommand('workbench.scm.focus');
     return;
   }
-  await window.showTextDocument(fileItem.uri);
+  await window.showTextDocument(selected.uri);
 };
 
 export function activate(context: ExtensionContext) {
