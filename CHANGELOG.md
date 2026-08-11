@@ -4,6 +4,11 @@ All notable changes to the "quick-open-git-status" extension will be documented 
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.3.2]
+
+- Use file icon theme icons via `ThemeIcon.File` + `resourceUri`
+- Move status and `+` / `-` counts to the end of each row (description)
+
 ## [0.3.1]
 
 - Always show green `+` / red `-` counts (not only on hover)

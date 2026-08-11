@@ -11,7 +11,6 @@ import {
 } from 'vscode';
 import simpleGit, { SimpleGit, FileStatusResult } from 'simple-git';
 import { promises as fs } from 'fs';
-import * as path from 'path';
 import { sortStringPropertyDESC } from 'typesafe-utils';
 
 type DiffStats = {
@@ -31,104 +30,6 @@ type FileQuickPickItem = QuickPickItem & {
   status: string;
 };
 
-const COLORS = {
-  added: { dark: '#3fb950', light: '#1a7f37' },
-  deleted: { dark: '#f85149', light: '#cf222e' },
-  binary: { dark: '#8b949e', light: '#6e7781' },
-} as const;
-
-const svgDataUri = (svg: string): Uri =>
-  Uri.parse(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`);
-
-/**
- * Always-visible colored "+N -M" badge (plain + / - characters).
- * QuickPick description text cannot be tinted, and item buttons only show on hover,
- * so the badge is rendered as iconPath.
- */
-const coloredStatsIcon = (
-  stats?: DiffStats
-): ThemeIcon | { light: Uri; dark: Uri } => {
-  if (!stats) {
-    return new ThemeIcon('file');
-  }
-  if (stats.binary) {
-    const make = (color: string) =>
-      svgDataUri(
-        `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="16" viewBox="0 0 36 16">` +
-          `<text x="0" y="12" fill="${color}" font-family="Segoe UI,monospace" font-size="11">bin</text>` +
-          `</svg>`
-      );
-    return { light: make(COLORS.binary.light), dark: make(COLORS.binary.dark) };
-  }
-
-  const plus = `+${stats.insertions}`;
-  const minus = `-${stats.deletions}`;
-  const width = Math.max(48, (plus.length + minus.length) * 7 + 8);
-  const minusX = plus.length * 7 + 4;
-  const make = (added: string, deleted: string) =>
-    svgDataUri(
-      `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="16" viewBox="0 0 ${width} 16">` +
-        `<text x="0" y="12" fill="${added}" font-family="Segoe UI,Consolas,monospace" font-size="12">${plus}</text>` +
-        `<text x="${minusX}" y="12" fill="${deleted}" font-family="Segoe UI,Consolas,monospace" font-size="12">${minus}</text>` +
-        `</svg>`
-    );
-  return {
-    light: make(COLORS.added.light, COLORS.deleted.light),
-    dark: make(COLORS.added.dark, COLORS.deleted.dark),
-  };
-};
-
-/** Product icons so rows still show a file-type cue while iconPath shows the +/- badge. */
-const fileTypeCodicon = (filePath: string): string => {
-  const base = path.basename(filePath).toLowerCase();
-  const ext = path.extname(base);
-
-  if (base === 'package.json' || base === 'package-lock.json') {
-    return '$(package)';
-  }
-  if (base === 'tsconfig.json' || base === 'jsconfig.json') {
-    return '$(json)';
-  }
-
-  switch (ext) {
-    case '.ts':
-    case '.tsx':
-    case '.mts':
-    case '.cts':
-    case '.js':
-    case '.jsx':
-    case '.mjs':
-    case '.cjs':
-    case '.css':
-    case '.scss':
-    case '.less':
-    case '.html':
-    case '.htm':
-    case '.yml':
-    case '.yaml':
-      return '$(file-code)';
-    case '.json':
-    case '.jsonc':
-      return '$(json)';
-    case '.md':
-    case '.mdx':
-      return '$(markdown)';
-    case '.svg':
-    case '.png':
-    case '.jpg':
-    case '.jpeg':
-    case '.gif':
-    case '.webp':
-      return '$(file-media)';
-    case '.sh':
-    case '.bash':
-    case '.zsh':
-      return '$(terminal)';
-    default:
-      return '$(file)';
-  }
-};
-
 const formatStatsDescription = (status: string, stats?: DiffStats): string => {
   if (!stats) {
     return status;
@@ -136,7 +37,7 @@ const formatStatsDescription = (status: string, stats?: DiffStats): string => {
   if (stats.binary) {
     return `${status}  binary`;
   }
-  // Plain "+" / "-" characters only (no boxed $(diff-*) codicons).
+  // Plain "+" / "-" characters at the end of the row (description slot).
   return `${status}  +${stats.insertions} -${stats.deletions}`;
 };
 
@@ -258,12 +159,16 @@ const toQuickPickItems = (
       .map((file) => {
         const status = file.working_dir === ' ' ? file.index : file.working_dir;
         const statusLabel = status === '?' ? 'U' : status;
+
         return {
-          label: `${fileTypeCodicon(file.path)} ${file.path}`,
+          // Path only in the label.
+          label: file.path,
+          // Changes at the end of the row (QuickPick description is the trailing slot).
           description: formatStatsDescription(statusLabel, file.stats),
           uri: file.uri,
           status: statusLabel,
-          iconPath: coloredStatsIcon(file.stats),
+          // File-icon-theme icons: must use ThemeIcon.File + resourceUri together.
+          iconPath: ThemeIcon.File,
           resourceUri: file.uri,
         } as FileQuickPickItem;
       })
