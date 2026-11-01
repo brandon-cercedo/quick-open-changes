@@ -11,11 +11,19 @@ This is similar to the command of `cmd+shift+b` in Atom.
 
 ![feature](https://i.gyazo.com/2caaabfa6980757cd9888ae3946e4993.png)
 
-In multi-root workspaces, changed files from every folder are listed in one Quick Pick, grouped by workspace folder name. Each row shows:
+Files are grouped like the Source Control view: **Merge Changes**, **Staged Changes**, and **Changes**. A partially staged file appears in both Staged Changes and Changes, each with its own counts. In multi-root workspaces, every folder is listed in one Quick Pick, with group headers like `my-repo · Staged Changes`.
 
+Each row shows:
+
+- The file icon from your current file icon theme
 - The **file name** as the primary label (like Quick Open)
-- A muted description: `folder/path • Modified +12 -3`
-- Hover buttons to **Stage Changes** or **Discard Changes** (with confirmation on discard)
+- A muted description: `folder/path • M +12 -3` (status letter: `M` modified, `A` added, `D` deleted, `R` renamed, `C` copied, `U` untracked, `!` conflict)
+- Hover buttons, depending on the group:
+  - Changes: **Stage Changes** / **Discard Changes** (discard keeps staged changes)
+  - Staged Changes: **Unstage Changes**
+  - Merge Changes: **Stage Changes** (mark resolved) / **Discard Changes**
+
+Discard always asks for confirmation.
 
 ## Commands
 

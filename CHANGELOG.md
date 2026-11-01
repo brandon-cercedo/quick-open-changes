@@ -6,6 +6,10 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+- Group files like Source Control: Merge Changes, Staged Changes, Changes (partially staged files appear in both)
+- Show staged counts (index vs HEAD) and unstaged counts (working tree vs index) separately
+- Add an Unstage button for staged files
+- Discard in Changes now restores from the index, keeping staged changes
 - Restore file icon theme icons in Quick Pick (`ThemeIcon.File` + `resourceUri`)
 - Show single-letter status (`M`, `A`, `D`, `R`, `U`) like the Source Control view
 - Show merge conflicts as `!` instead of mislabeling them as untracked (discard no longer deletes conflicted files)

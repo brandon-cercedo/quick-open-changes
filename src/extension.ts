@@ -21,7 +21,28 @@ type DiffStats = {
   binary: boolean;
 };
 
-type FileStatusResultWithMeta = FileStatusResult & {
+/** Same groups, in the same order, as the Source Control view. */
+type ChangeGroup = 'merge' | 'staged' | 'changes';
+
+const GROUP_ORDER: ReadonlyArray<ChangeGroup> = ['merge', 'staged', 'changes'];
+
+const GROUP_LABELS: Record<ChangeGroup, string> = {
+  merge: 'Merge Changes',
+  staged: 'Staged Changes',
+  changes: 'Changes',
+};
+
+/**
+ * One row in the picker. A partially staged file yields two entries:
+ * one in "Staged Changes" and one in "Changes".
+ *
+ * `status` is a single letter, matching VS Code's Source Control decorations:
+ * M modified, A added, D deleted, R renamed, C copied, U untracked, ! conflict.
+ */
+type ChangeEntry = {
+  group: ChangeGroup;
+  status: string;
+  relativePath: string;
   uri: Uri;
   folderName: string;
   workspacePath: string;
@@ -29,6 +50,7 @@ type FileStatusResultWithMeta = FileStatusResult & {
 };
 
 type FileQuickPickItem = QuickPickItem & {
+  group: ChangeGroup;
   uri: Uri;
   status: string;
   relativePath: string;
@@ -40,9 +62,21 @@ const stageButton: QuickInputButton = {
   tooltip: 'Stage Changes',
 };
 
+const unstageButton: QuickInputButton = {
+  iconPath: new ThemeIcon('remove'),
+  tooltip: 'Unstage Changes',
+};
+
 const discardButton: QuickInputButton = {
   iconPath: new ThemeIcon('discard'),
   tooltip: 'Discard Changes',
+};
+
+const GROUP_BUTTONS: Record<ChangeGroup, QuickInputButton[]> = {
+  // Staging a conflicted file marks it as resolved, like the Source Control view.
+  merge: [discardButton, stageButton],
+  staged: [unstageButton],
+  changes: [discardButton, stageButton],
 };
 
 /** Unmerged (conflict) XY codes from `git status --porcelain`: DD, AU, UD, UA, DU, AA, UU. */
@@ -51,18 +85,6 @@ const isConflict = (file: FileStatusResult): boolean =>
   file.working_dir === 'U' ||
   (file.index === 'A' && file.working_dir === 'A') ||
   (file.index === 'D' && file.working_dir === 'D');
-
-/**
- * Single-letter status, matching VS Code's Source Control decorations:
- * M modified, A added, D deleted, R renamed, C copied, U untracked, ! conflict.
- */
-const statusLetter = (file: FileStatusResult): string => {
-  if (isConflict(file)) {
-    return '!';
-  }
-  const status = file.working_dir === ' ' ? file.index : file.working_dir;
-  return status === '?' ? 'U' : status;
-};
 
 const formatChangeStats = (status: string, stats?: DiffStats): string => {
   if (!stats) {
@@ -100,10 +122,17 @@ const countUntrackedLines = async (filePath: string): Promise<DiffStats | undefi
   }
 };
 
-const getDiffStatsMap = async (git: SimpleGit): Promise<Map<string, DiffStats>> => {
+/**
+ * Per-file stats for `git diff <args>`. `--no-renames` keeps stats keyed by the
+ * file's current path (a staged rename counts as an add of the new path).
+ */
+const getDiffStatsMap = async (
+  git: SimpleGit,
+  args: string[]
+): Promise<Map<string, DiffStats>> => {
   const statsByPath = new Map<string, DiffStats>();
   try {
-    const summary = await git.diffSummary(['HEAD']);
+    const summary = await git.diffSummary(['--no-renames', ...args]);
     for (const file of summary.files) {
       if ('binary' in file && file.binary) {
         statsByPath.set(file.file, { insertions: 0, deletions: 0, binary: true });
@@ -118,14 +147,14 @@ const getDiffStatsMap = async (git: SimpleGit): Promise<Map<string, DiffStats>> 
       }
     }
   } catch {
-    // Ignore diff failures (e.g. empty repo with no HEAD).
+    // Ignore diff failures; rows are still listed, just without stats.
   }
   return statsByPath;
 };
 
 const gitStatusForFolder = async (
   workspaceFolder: WorkspaceFolder
-): Promise<ReadonlyArray<FileStatusResultWithMeta>> => {
+): Promise<ReadonlyArray<ChangeEntry>> => {
   const workspacePath = workspaceFolder.uri.fsPath;
   const git: SimpleGit = simpleGit(workspacePath);
 
@@ -140,93 +169,117 @@ const gitStatusForFolder = async (
     return [];
   }
 
-  const statsByPath = await getDiffStatsMap(git);
+  const [stagedStats, unstagedStats] = await Promise.all([
+    // Index vs HEAD (vs the empty tree on a branch with no commits yet).
+    getDiffStatsMap(git, ['--cached']),
+    // Working tree vs index.
+    getDiffStatsMap(git, []),
+  ]);
 
-  return Promise.all(
-    files.map(async (file) => {
-      let stats = statsByPath.get(file.path);
-      const status = file.working_dir === ' ' ? file.index : file.working_dir;
-      if (!stats && status === '?') {
-        stats = await countUntrackedLines(
-          Uri.joinPath(workspaceFolder.uri, file.path).fsPath
-        );
-      }
-
-      return {
-        ...file,
-        uri: Uri.joinPath(workspaceFolder.uri, file.path),
+  const entriesPerFile = await Promise.all(
+    files.map(async (file): Promise<ChangeEntry[]> => {
+      const uri = Uri.joinPath(workspaceFolder.uri, file.path);
+      const base = {
+        relativePath: file.path,
+        uri,
         folderName: workspaceFolder.name,
         workspacePath,
-        stats,
       };
+
+      if (isConflict(file)) {
+        return [{ ...base, group: 'merge', status: '!' }];
+      }
+
+      const entries: ChangeEntry[] = [];
+      if (file.index !== ' ' && file.index !== '?') {
+        entries.push({
+          ...base,
+          group: 'staged',
+          status: file.index,
+          stats: stagedStats.get(file.path),
+        });
+      }
+      if (file.working_dir === '?') {
+        entries.push({
+          ...base,
+          group: 'changes',
+          status: 'U',
+          stats: await countUntrackedLines(uri.fsPath),
+        });
+      } else if (file.working_dir !== ' ') {
+        entries.push({
+          ...base,
+          group: 'changes',
+          status: file.working_dir,
+          stats: unstagedStats.get(file.path),
+        });
+      }
+      return entries;
     })
   );
+
+  return entriesPerFile.flat();
 };
 
-const gitStatus = async (): Promise<ReadonlyArray<FileStatusResultWithMeta>> => {
+const gitStatus = async (): Promise<ReadonlyArray<ChangeEntry>> => {
   const folders = workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
     return [];
   }
 
   const results = await Promise.all(folders.map(gitStatusForFolder));
-  return results.reduce<FileStatusResultWithMeta[]>(
-    (all, folderFiles) => all.concat(folderFiles),
-    []
-  );
+  return results.flat();
 };
 
+const toFileItem = (entry: ChangeEntry): FileQuickPickItem => ({
+  // Filename only (like default Quick Open).
+  label: path.basename(entry.relativePath),
+  // Smaller/muted trailing text: folder • M +N -M
+  description: formatDescription(entry.relativePath, entry.status, entry.stats),
+  group: entry.group,
+  uri: entry.uri,
+  status: entry.status,
+  relativePath: entry.relativePath,
+  workspacePath: entry.workspacePath,
+  // File icon theme icon: needs ThemeIcon.File + resourceUri together (VS Code 1.108+).
+  iconPath: ThemeIcon.File,
+  resourceUri: entry.uri,
+  buttons: GROUP_BUTTONS[entry.group],
+});
+
 const toQuickPickItems = (
-  files: ReadonlyArray<FileStatusResultWithMeta>,
-  showSeparators: boolean
+  entries: ReadonlyArray<ChangeEntry>,
+  multiRoot: boolean
 ): Array<QuickPickItem | FileQuickPickItem> => {
   const items: Array<QuickPickItem | FileQuickPickItem> = [];
-  const filesByFolder = new Map<string, FileStatusResultWithMeta[]>();
+  const entriesByFolder = new Map<string, ChangeEntry[]>();
 
-  for (const file of files) {
-    const group = filesByFolder.get(file.folderName) ?? [];
-    group.push(file);
-    filesByFolder.set(file.folderName, group);
+  for (const entry of entries) {
+    const folderEntries = entriesByFolder.get(entry.folderName) ?? [];
+    folderEntries.push(entry);
+    entriesByFolder.set(entry.folderName, folderEntries);
   }
 
   const folderOrder =
     workspace.workspaceFolders?.map((folder) => folder.name) ??
-    Array.from(filesByFolder.keys());
+    Array.from(entriesByFolder.keys());
 
   for (const folderName of folderOrder) {
-    const folderFiles = filesByFolder.get(folderName);
-    if (!folderFiles || folderFiles.length === 0) {
-      continue;
-    }
+    const folderEntries = entriesByFolder.get(folderName) ?? [];
 
-    if (showSeparators) {
+    for (const group of GROUP_ORDER) {
+      const groupEntries = folderEntries.filter((entry) => entry.group === group);
+      if (groupEntries.length === 0) {
+        continue;
+      }
+
+      // Quick Pick separators can't nest, so multi-root labels carry the folder name.
       items.push({
-        label: folderName,
+        label: multiRoot ? `${folderName} · ${GROUP_LABELS[group]}` : GROUP_LABELS[group],
         kind: QuickPickItemKind.Separator,
       });
+      items.push(...groupEntries.map(toFileItem).sort(sortStringPropertyDESC('status')));
     }
-
-    const fileItems = folderFiles
-      .map((file) => {
-        const statusLabel = statusLetter(file);
-        return {
-          // Filename only (like default Quick Open).
-          label: path.basename(file.path),
-          // Smaller/muted trailing text: folder • M +N -M
-          description: formatDescription(file.path, statusLabel, file.stats),
-          uri: file.uri,
-          status: statusLabel,
-          relativePath: file.path,
-          workspacePath: file.workspacePath,
-          // File icon theme icon: needs ThemeIcon.File + resourceUri together (VS Code 1.108+).
-          iconPath: ThemeIcon.File,
-          resourceUri: file.uri,
-          buttons: [discardButton, stageButton],
-        } as FileQuickPickItem;
-      })
-      .sort(sortStringPropertyDESC('status'));
-
-    items.push(...fileItems);
   }
 
   return items;
@@ -235,6 +288,26 @@ const toQuickPickItems = (
 const stageFile = async (item: FileQuickPickItem): Promise<void> => {
   const git = simpleGit(item.workspacePath);
   await git.add(item.relativePath);
+};
+
+const hasHead = async (git: SimpleGit): Promise<boolean> => {
+  try {
+    // No --quiet: simple-git only rejects when git writes to stderr.
+    await git.raw(['rev-parse', '--verify', 'HEAD']);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const unstageFile = async (item: FileQuickPickItem): Promise<void> => {
+  const git = simpleGit(item.workspacePath);
+  if (await hasHead(git)) {
+    await git.raw(['restore', '--staged', '--', item.relativePath]);
+  } else {
+    // No commits yet: there's no HEAD to restore from, so just drop it from the index.
+    await git.raw(['rm', '--cached', '--quiet', '--', item.relativePath]);
+  }
 };
 
 const discardFile = async (item: FileQuickPickItem): Promise<boolean> => {
@@ -259,20 +332,26 @@ const discardFile = async (item: FileQuickPickItem): Promise<boolean> => {
     return true;
   }
 
-  // Tracked: restore index + worktree to HEAD (covers modified, deleted, staged, etc.).
-  await git.raw(['restore', '--source=HEAD', '--staged', '--worktree', '--', item.relativePath]);
+  if (item.group === 'merge') {
+    // Conflict: reset both index and working tree to HEAD.
+    await git.raw(['restore', '--source=HEAD', '--staged', '--worktree', '--', item.relativePath]);
+    return true;
+  }
+
+  // Unstaged changes: restore the working tree from the index, keeping staged changes.
+  await git.raw(['restore', '--worktree', '--', item.relativePath]);
   return true;
 };
 
 const open = async (): Promise<void> => {
-  const showSeparators = (workspace.workspaceFolders?.length ?? 0) > 1;
+  const multiRoot = (workspace.workspaceFolders?.length ?? 0) > 1;
   const quickPick = window.createQuickPick();
   quickPick.matchOnDescription = true;
   quickPick.placeholder = 'Select a changed file';
 
   const refresh = async (): Promise<void> => {
-    const files = await gitStatus();
-    quickPick.items = toQuickPickItems(files, showSeparators);
+    const entries = await gitStatus();
+    quickPick.items = toQuickPickItems(entries, multiRoot);
   };
 
   await refresh();
@@ -302,6 +381,11 @@ const open = async (): Promise<void> => {
       try {
         if (event.button === stageButton) {
           await stageFile(item);
+          await refresh();
+          return;
+        }
+        if (event.button === unstageButton) {
+          await unstageFile(item);
           await refresh();
           return;
         }
