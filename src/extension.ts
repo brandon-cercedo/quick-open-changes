@@ -45,37 +45,33 @@ const discardButton: QuickInputButton = {
   tooltip: 'Discard Changes',
 };
 
-const statusWord = (status: string): string => {
-  switch (status) {
-    case 'M':
-      return 'Modified';
-    case 'A':
-      return 'Added';
-    case 'D':
-      return 'Deleted';
-    case 'R':
-      return 'Renamed';
-    case 'C':
-      return 'Copied';
-    case 'U':
-    case '?':
-      return 'Untracked';
-    case '!':
-      return 'Ignored';
-    default:
-      return status;
+/** Unmerged (conflict) XY codes from `git status --porcelain`: DD, AU, UD, UA, DU, AA, UU. */
+const isConflict = (file: FileStatusResult): boolean =>
+  file.index === 'U' ||
+  file.working_dir === 'U' ||
+  (file.index === 'A' && file.working_dir === 'A') ||
+  (file.index === 'D' && file.working_dir === 'D');
+
+/**
+ * Single-letter status, matching VS Code's Source Control decorations:
+ * M modified, A added, D deleted, R renamed, C copied, U untracked, ! conflict.
+ */
+const statusLetter = (file: FileStatusResult): string => {
+  if (isConflict(file)) {
+    return '!';
   }
+  const status = file.working_dir === ' ' ? file.index : file.working_dir;
+  return status === '?' ? 'U' : status;
 };
 
 const formatChangeStats = (status: string, stats?: DiffStats): string => {
-  const word = statusWord(status);
   if (!stats) {
-    return word;
+    return status;
   }
   if (stats.binary) {
-    return `${word}  binary`;
+    return `${status} binary`;
   }
-  return `${word}  +${stats.insertions} -${stats.deletions}`;
+  return `${status} +${stats.insertions} -${stats.deletions}`;
 };
 
 /** Description mirrors Quick Open: smaller/muted trailing text. */
@@ -95,7 +91,9 @@ const formatDescription = (
 const countUntrackedLines = async (filePath: string): Promise<DiffStats | undefined> => {
   try {
     const content = await fs.readFile(filePath, 'utf8');
-    const insertions = content.length === 0 ? 0 : content.split(/\r\n|\r|\n/).length;
+    const lines = content.split(/\r\n|\r|\n/);
+    // A trailing newline ends the last line; it doesn't start a new one.
+    const insertions = lines.length - (lines[lines.length - 1] === '' ? 1 : 0);
     return { insertions, deletions: 0, binary: false };
   } catch {
     return undefined;
@@ -210,12 +208,11 @@ const toQuickPickItems = (
 
     const fileItems = folderFiles
       .map((file) => {
-        const status = file.working_dir === ' ' ? file.index : file.working_dir;
-        const statusLabel = status === '?' ? 'U' : status;
+        const statusLabel = statusLetter(file);
         return {
           // Filename only (like default Quick Open).
           label: path.basename(file.path),
-          // Smaller/muted trailing text: folder • Modified +N -M
+          // Smaller/muted trailing text: folder • M +N -M
           description: formatDescription(file.path, statusLabel, file.stats),
           uri: file.uri,
           status: statusLabel,
@@ -253,7 +250,7 @@ const discardFile = async (item: FileQuickPickItem): Promise<boolean> => {
   const git = simpleGit(item.workspacePath);
 
   // Untracked: remove the file from disk.
-  if (item.status === 'U' || item.status === '?') {
+  if (item.status === 'U') {
     try {
       await fs.unlink(item.uri.fsPath);
     } catch {

@@ -7,6 +7,9 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 ## [Unreleased]
 
 - Restore file icon theme icons in Quick Pick (`ThemeIcon.File` + `resourceUri`)
+- Show single-letter status (`M`, `A`, `D`, `R`, `U`) like the Source Control view
+- Show merge conflicts as `!` instead of mislabeling them as untracked (discard no longer deletes conflicted files)
+- Fix untracked line counts being one too high for files ending in a newline
 - Switch package manager from Yarn 1 to pnpm
 - Update toolchain: TypeScript 6.0, ESLint 10 (flat config) + typescript-eslint 8, `@vscode/test-cli` / `@vscode/test-electron`, `@vscode/vsce`
 - Update `simple-git` to 4.x
