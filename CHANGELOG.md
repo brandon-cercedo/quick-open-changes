@@ -6,6 +6,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+- Restore file icon theme icons in Quick Pick (`ThemeIcon.File` + `resourceUri`)
 - Switch package manager from Yarn 1 to pnpm
 - Update toolchain: TypeScript 6.0, ESLint 10 (flat config) + typescript-eslint 8, `@vscode/test-cli` / `@vscode/test-electron`, `@vscode/vsce`
 - Update `simple-git` to 4.x

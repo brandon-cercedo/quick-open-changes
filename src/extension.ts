@@ -221,6 +221,9 @@ const toQuickPickItems = (
           status: statusLabel,
           relativePath: file.path,
           workspacePath: file.workspacePath,
+          // File icon theme icon: needs ThemeIcon.File + resourceUri together (VS Code 1.108+).
+          iconPath: ThemeIcon.File,
+          resourceUri: file.uri,
           buttons: [discardButton, stageButton],
         } as FileQuickPickItem;
       })
