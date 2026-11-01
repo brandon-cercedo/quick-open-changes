@@ -10,7 +10,7 @@ import {
   workspace,
   WorkspaceFolder,
 } from 'vscode';
-import simpleGit, { SimpleGit, FileStatusResult } from 'simple-git';
+import { simpleGit, SimpleGit, FileStatusResult } from 'simple-git';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { sortStringPropertyDESC } from 'typesafe-utils';

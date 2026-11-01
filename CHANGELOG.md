@@ -4,6 +4,14 @@ All notable changes to the "quick-open-git-status" extension will be documented 
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [Unreleased]
+
+- Switch package manager from Yarn 1 to pnpm
+- Update toolchain: TypeScript 6.0, ESLint 10 (flat config) + typescript-eslint 8, `@vscode/test-cli` / `@vscode/test-electron`, `@vscode/vsce`
+- Update `simple-git` to 4.x
+- Remove redundant `activationEvents` (implied by `contributes.commands`)
+- Replace the sample test with a command-registration smoke test
+
 ## [0.3.3]
 
 - Show filename as the primary label (like Quick Open)
