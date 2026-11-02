@@ -3,9 +3,12 @@
 out/test/**
 src/**
 .gitignore
-.yarnrc
-vsc-extension-quickstart.md
+.npmrc
+pnpm-lock.yaml
 **/tsconfig.json
-**/.eslintrc.json
+**/eslint.config.mjs
+**/.vscode-test.*
 **/*.map
 **/*.ts
+*.vsix
+images/screenshot.png

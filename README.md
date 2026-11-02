@@ -1,24 +1,66 @@
-# quick-open-git-status
+# Pick Changes
 
-Quickly opening changes files.
+Open, stage and filter your git changes from a Quick Pick.
+
+Forked from [Quick Open Git Status](https://github.com/aki77/vscode-quick-open-git-status) by [aki77](https://github.com/aki77).
+
+![Pick Changes](images/screenshot.png)
+
+## Usage
+
+Press `Cmd+G` `P` (`Ctrl+G` `P` on Windows/Linux), or run **Pick Git changes** from the Command Palette. Pick a file to open it.
 
 ## Features
 
-The package comes which pops up a list of all the untracked and modified files in the project.
-These will be the same files that you would see on the command line if you ran `git status`.
+- **Grouped like Source Control:** Merge Changes, Staged Changes and Changes. In multi-root workspaces, all repos appear in one list.
+- **Quick overview:** each row shows the file icon, name, folder, status and line counts, for example `src • M +12 -3`.
+- **Inline actions:** hover over a row to stage, unstage or discard it. Discard asks for confirmation first.
+- **Path search:** `src/ext` finds `src/extension.ts`. In multi-root workspaces, the path starts with the repo name, so `api/src` finds the files in `src` of the `api` repo.
+- **Filters:** show only the files of a repo, status or group, with live suggestions.
 
-This is similar to the command of `cmd+shift+b` in Atom.
+Status letters: `M` modified, `A` added, `D` deleted, `R` renamed, `C` copied, `U` untracked, `!` conflict.
 
-![feature](https://i.gyazo.com/2caaabfa6980757cd9888ae3946e4993.png)
+## Filters
 
-## Commands
+| Type | Filters by | Examples                         |
+| ---- | ---------- | -------------------------------- |
+| `#`  | Repository | `#api`, `#web`                   |
+| `@`  | Status     | `@m`, `@u`, `@!`, `@modified`    |
+| `%`  | Group      | `%staged`, `%unstaged`, `%merge` |
+| `?`  | Show help  |                                  |
 
-- `quick-open-git-status.open`
+Mix filters and text: `#api %staged @m readme`.
 
-## Keymaps
+- Different types combine with **AND**: `#api @m` shows files in `api` **AND** modified.
+- The same type combines with **OR**: `@a @u` shows files added **OR** untracked.
 
-No keymap by default.
+As you type a filter, suggestions show each matching value with its file count. Press **Tab** or **Enter** to pick one.
 
-## TODO
+## Shortcut
 
-- [ ] Multiple workspace folders
+The `Cmd+G` `P` shortcut replaces VS Code's **Find Next** (`Cmd+G`) on macOS. The `Ctrl+G` `P` shortcut replaces **Go to Line** (`Ctrl+G`) on Windows/Linux. To change it, open **Preferences: Open Keyboard Shortcuts** and search for `Pick Git changes`.
+
+## Requirements
+
+VS Code 1.108.0 or newer.
+
+## Contributing
+
+Requires [pnpm](https://pnpm.io). Install the dependencies:
+
+```sh
+pnpm install
+```
+
+Build the extension and open this folder in a VS Code window that runs it:
+
+```sh
+pnpm run compile && code --extensionDevelopmentPath="$PWD" "$PWD"
+```
+
+Run the tests and lint before opening a PR:
+
+```sh
+pnpm test
+pnpm run lint
+```

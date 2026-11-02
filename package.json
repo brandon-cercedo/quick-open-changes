@@ -1,58 +1,80 @@
 {
-  "name": "quick-open-git-status",
-  "displayName": "Quick Open Git Status",
-  "description": "Quickly opening changes files.",
-  "version": "0.1.1",
-  "publisher": "aki77",
+  "name": "pick-changes",
+  "displayName": "Pick Changes",
+  "description": "Open, stage and filter your git changes from a Quick Pick. Forked from Quick Open Git Status.",
+  "version": "0.3.3",
+  "publisher": "brandon-cercedo",
   "license": "MIT",
+  "packageManager": "pnpm@10.16.1",
   "engines": {
-    "vscode": "^1.55.0"
+    "vscode": "^1.108.0"
   },
   "categories": [
-    "Other"
+    "Other",
+    "Visualization"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/aki77/vscode-quick-open-git-status.git"
+    "url": "https://github.com/brandon-cercedo/quick-open-changes.git"
   },
   "bugs": {
-    "url": "https://github.com/aki77/vscode-quick-open-git-status/issues"
+    "url": "https://github.com/brandon-cercedo/quick-open-changes/issues"
   },
-  "activationEvents": [
-    "onCommand:quick-open-git-status.open"
-  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "quick-open-git-status.open",
-        "title": "Quick open git status"
+        "command": "pick-changes.open",
+        "title": "Pick Git changes"
+      },
+      {
+        "command": "pick-changes.acceptSuggestion",
+        "title": "Accept Filter Suggestion"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "pick-changes.acceptSuggestion",
+          "when": "false"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "pick-changes.open",
+        "key": "ctrl+g p",
+        "mac": "cmd+g p"
+      },
+      {
+        "key": "tab",
+        "command": "pick-changes.acceptSuggestion",
+        "when": "inQuickOpen && pickChanges.suggestionActive"
       }
     ]
   },
   "scripts": {
-    "vscode:prepublish": "yarn run compile",
+    "vscode:prepublish": "pnpm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "pretest": "yarn run compile && yarn run lint",
-    "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js"
-  },
-  "devDependencies": {
-    "@types/glob": "^7.1.3",
-    "@types/mocha": "^8.0.4",
-    "@types/node": "^12.11.7",
-    "@types/vscode": "^1.55.0",
-    "@typescript-eslint/eslint-plugin": "^4.14.1",
-    "@typescript-eslint/parser": "^4.14.1",
-    "eslint": "^7.19.0",
-    "glob": "^7.1.6",
-    "mocha": "^8.2.1",
-    "typescript": "^4.1.3",
-    "vscode-test": "^1.5.0"
+    "lint": "eslint src",
+    "pretest": "pnpm run compile && pnpm run lint",
+    "test": "vscode-test",
+    "package": "vsce package"
   },
   "dependencies": {
-    "simple-git": "^2.38.0",
-    "typesafe-utils": "^1.11.1"
+    "simple-git": "^4.0.2",
+    "typesafe-utils": "^1.16.2"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.20.5",
+    "@types/vscode": "1.108.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^4.1.0",
+    "eslint": "^10.14.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.1"
   }
 }
