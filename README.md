@@ -1,38 +1,45 @@
-# quick-open-git-status
+# Pick Changes
 
-Quickly opening changes files.
+Open, stage and filter your git changes from a Quick Pick.
+
+Forked from [Quick Open Git Status](https://github.com/aki77/vscode-quick-open-git-status) by [aki77](https://github.com/aki77).
+
+![Pick Changes](images/screenshot.png)
+
+## Usage
+
+Press `Cmd+G` `P` (`Ctrl+G` `P` on Windows/Linux), or run **Pick Git changes** from the Command Palette. Pick a file to open it.
 
 ## Features
 
-The package comes which pops up a list of all the untracked and modified files in the project.
-These will be the same files that you would see on the command line if you ran `git status`.
+- **Grouped like Source Control:** Merge Changes, Staged Changes and Changes. In multi-root workspaces, all repos appear in one list.
+- **Quick overview:** each row shows the file icon, name, folder, status and line counts, for example `src • M +12 -3`.
+- **Inline actions:** hover over a row to stage, unstage or discard it. Discard asks for confirmation first.
+- **Path search:** `src/ext` finds `src/extension.ts`. In multi-root workspaces, the path starts with the repo name, so `api/src` finds the files in `src` of the `api` repo.
+- **Filters:** show only the files of a repo, status or group, with live suggestions.
 
-This is similar to the command of `cmd+shift+b` in Atom.
+Status letters: `M` modified, `A` added, `D` deleted, `R` renamed, `C` copied, `U` untracked, `!` conflict.
 
-![feature](https://i.gyazo.com/2caaabfa6980757cd9888ae3946e4993.png)
+## Filters
 
-Files are grouped like the Source Control view: **Merge Changes**, **Staged Changes**, and **Changes**. A partially staged file appears in both Staged Changes and Changes, each with its own counts. In multi-root workspaces, every folder is listed in one Quick Pick, with group headers like `my-repo · Staged Changes`.
+| Type | Filters by | Examples                         |
+| ---- | ---------- | -------------------------------- |
+| `#`  | Repository | `#api`, `#web`                   |
+| `@`  | Status     | `@m`, `@u`, `@!`, `@modified`    |
+| `%`  | Group      | `%staged`, `%unstaged`, `%merge` |
+| `?`  | Show help  |                                  |
 
-Each row shows:
+Mix filters and text: `#api %staged @m readme`.
 
-- The file icon from your current file icon theme
-- The **file name** as the primary label (like Quick Open)
-- A muted description: `folder/path • M +12 -3` (status letter: `M` modified, `A` added, `D` deleted, `R` renamed, `C` copied, `U` untracked, `!` conflict)
-- Hover buttons, depending on the group:
-  - Changes: **Stage Changes** / **Discard Changes** (discard keeps staged changes)
-  - Staged Changes: **Unstage Changes**
-  - Merge Changes: **Stage Changes** (mark resolved) / **Discard Changes**
+- Different types combine with **AND**: `#api @m` shows files in `api` **AND** modified.
+- The same type combines with **OR**: `@a @u` shows files added **OR** untracked.
 
-Discard always asks for confirmation.
+As you type a filter, suggestions show each matching value with its file count. Press **Tab** or **Enter** to pick one.
 
-## Commands
+## Shortcut
 
-- `quick-open-git-status.open`
-
-## Keymaps
-
-No keymap by default.
+The `Cmd+G` `P` shortcut replaces VS Code's **Find Next** (`Cmd+G`) on macOS. The `Ctrl+G` `P` shortcut replaces **Go to Line** (`Ctrl+G`) on Windows/Linux. To change it, open **Preferences: Open Keyboard Shortcuts** and search for `Pick Git changes`.
 
 ## Requirements
 
-VS Code `1.108.0` or newer (for file icons in Quick Pick via `resourceUri`).
+VS Code 1.108.0 or newer.
