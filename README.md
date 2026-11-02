@@ -43,3 +43,24 @@ The `Cmd+G` `P` shortcut replaces VS Code's **Find Next** (`Cmd+G`) on macOS. Th
 ## Requirements
 
 VS Code 1.108.0 or newer.
+
+## Contributing
+
+Requires [pnpm](https://pnpm.io). Install the dependencies:
+
+```sh
+pnpm install
+```
+
+Build the extension and open this folder in a VS Code window that runs it:
+
+```sh
+pnpm run compile && code --extensionDevelopmentPath="$PWD" "$PWD"
+```
+
+Run the tests and lint before opening a PR:
+
+```sh
+pnpm test
+pnpm run lint
+```
