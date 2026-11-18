@@ -63,4 +63,11 @@ suite('Extension Test Suite', () => {
     // No workspace is open in the test host, so the path stays absolute.
     assert.strictEqual(await vscode.env.clipboard.readText(), `${readme.fsPath}:13:12`);
   });
+
+  test('contributes the settings with their defaults', () => {
+    const config = vscode.workspace.getConfiguration('pickChanges');
+    assert.strictEqual(config.get('enterAction'), 'diff');
+    assert.strictEqual(config.get('showLineCounts'), true);
+    assert.strictEqual(config.get('previewWhileBrowsing'), false);
+  });
 });

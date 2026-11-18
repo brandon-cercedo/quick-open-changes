@@ -7,6 +7,10 @@ import {
   QuickPick,
   QuickPickItem,
   QuickPickItemKind,
+  Tab,
+  TabInputText,
+  TabInputTextDiff,
+  TextDocumentShowOptions,
   ThemeIcon,
   Uri,
   window,
@@ -63,9 +67,37 @@ type FileQuickPickItem = QuickPickItem & {
   workspacePath: string;
 };
 
+// --- Settings ------------------------------------------------------------------
+
+/** What a row opens: its diff, or the file itself. */
+type View = "diff" | "file";
+
+/** `pickChanges.*` settings (package.json), read each time the picker opens. */
+const getSettings = () => {
+  const config = workspace.getConfiguration("pickChanges");
+  const enterAction: View =
+    config.get<string>("enterAction") === "file" ? "file" : "diff";
+  return {
+    enterAction,
+    showLineCounts: config.get<boolean>("showLineCounts", true),
+    previewWhileBrowsing: config.get<boolean>("previewWhileBrowsing", false),
+  };
+};
+
 const openFileButton: QuickInputButton = {
   iconPath: new ThemeIcon("go-to-file"),
   tooltip: "Open File",
+};
+
+const openChangesButton: QuickInputButton = {
+  iconPath: new ThemeIcon("git-compare"),
+  tooltip: "Open Changes",
+};
+
+/** The row button opens whatever Enter doesn't. */
+const VIEW_BUTTONS: Record<View, { button: QuickInputButton; view: View }> = {
+  diff: { button: openFileButton, view: "file" },
+  file: { button: openChangesButton, view: "diff" },
 };
 
 const stageButton: QuickInputButton = {
@@ -175,6 +207,7 @@ const getDiffStatsMap = async (
 
 const gitStatusForFolder = async (
   workspaceFolder: WorkspaceFolder,
+  showLineCounts: boolean,
 ): Promise<ReadonlyArray<ChangeEntry>> => {
   const workspacePath = workspaceFolder.uri.fsPath;
   const git: SimpleGit = simpleGit(workspacePath);
@@ -190,12 +223,15 @@ const gitStatusForFolder = async (
     return [];
   }
 
-  const [stagedStats, unstagedStats] = await Promise.all([
-    // Index vs HEAD (vs the empty tree on a branch with no commits yet).
-    getDiffStatsMap(git, ["--cached"]),
-    // Working tree vs index.
-    getDiffStatsMap(git, []),
-  ]);
+  // With line counts hidden, skip the two `git diff` runs entirely.
+  const [stagedStats, unstagedStats] = showLineCounts
+    ? await Promise.all([
+        // Index vs HEAD (vs the empty tree on a branch with no commits yet).
+        getDiffStatsMap(git, ["--cached"]),
+        // Working tree vs index.
+        getDiffStatsMap(git, []),
+      ])
+    : [new Map<string, DiffStats>(), new Map<string, DiffStats>()];
 
   const entriesPerFile = await Promise.all(
     files.map(async (file): Promise<ChangeEntry[]> => {
@@ -229,7 +265,9 @@ const gitStatusForFolder = async (
           ...base,
           group: "changes",
           status: "U",
-          stats: await countUntrackedLines(uri.fsPath),
+          stats: showLineCounts
+            ? await countUntrackedLines(uri.fsPath)
+            : undefined,
         });
       } else if (file.working_dir !== " ") {
         entries.push({
@@ -246,13 +284,17 @@ const gitStatusForFolder = async (
   return entriesPerFile.flat();
 };
 
-const gitStatus = async (): Promise<ReadonlyArray<ChangeEntry>> => {
+const gitStatus = async (
+  showLineCounts: boolean,
+): Promise<ReadonlyArray<ChangeEntry>> => {
   const folders = workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
     return [];
   }
 
-  const results = await Promise.all(folders.map(gitStatusForFolder));
+  const results = await Promise.all(
+    folders.map((folder) => gitStatusForFolder(folder, showLineCounts)),
+  );
   return results.flat();
 };
 
@@ -289,22 +331,24 @@ const hasChanges = (entry: { group: ChangeGroup; status: string }): boolean =>
   entry.group !== "merge" && entry.status !== "U";
 
 /**
- * Rows whose Enter (diff) differs from the file on disk. Deleted files have no
- * file to open, and rows without a diff already open the file on Enter.
+ * Rows where the diff and the file differ, so they get the Open File / Open
+ * Changes button. Deleted files have no file on disk, and rows without a diff
+ * only have the file.
  */
-const hasOpenFileButton = (entry: {
-  group: ChangeGroup;
-  status: string;
-}): boolean => hasChanges(entry) && entry.status !== "D";
+const hasViewButton = (entry: { group: ChangeGroup; status: string }): boolean =>
+  hasChanges(entry) && entry.status !== "D";
 
 /**
  * Opens a row the way the Source Control view does: staged rows compare HEAD
  * with the index, unstaged rows compare the index with the working tree.
  * Added and deleted files have only one side, so that side opens on its own.
  */
-const openChanges = async (item: FileQuickPickItem): Promise<void> => {
+const openChanges = async (
+  item: FileQuickPickItem,
+  options: TextDocumentShowOptions,
+): Promise<void> => {
   if (!hasChanges(item)) {
-    await window.showTextDocument(item.uri);
+    await window.showTextDocument(item.uri, options);
     return;
   }
   const git = await getGitApi();
@@ -318,9 +362,15 @@ const openChanges = async (item: FileQuickPickItem): Promise<void> => {
   const name = path.basename(item.relativePath);
   const index = git.toGitUri(item.uri, INDEX_REF);
   const openSide = (uri: Uri, label: string) =>
-    commands.executeCommand("vscode.open", uri, {}, `${name} (${label})`);
+    commands.executeCommand("vscode.open", uri, options, `${name} (${label})`);
   const openDiff = (left: Uri, right: Uri, label: string) =>
-    commands.executeCommand("vscode.diff", left, right, `${name} (${label})`);
+    commands.executeCommand(
+      "vscode.diff",
+      left,
+      right,
+      `${name} (${label})`,
+      options,
+    );
 
   if (item.group === "staged") {
     switch (item.status) {
@@ -348,8 +398,59 @@ const openChanges = async (item: FileQuickPickItem): Promise<void> => {
   await openDiff(index, item.uri, "Working Tree");
 };
 
+/**
+ * Opens a row as a diff or as the file. A deleted file has no file on disk, so
+ * it always shows its last version.
+ */
+const openItem = async (
+  item: FileQuickPickItem,
+  view: View,
+  options: TextDocumentShowOptions,
+): Promise<void> => {
+  if (view === "file" && item.status !== "D") {
+    await window.showTextDocument(item.uri, options);
+    return;
+  }
+  // Untracked files and conflicts have no diff, so this opens the file itself.
+  await openChanges(item, options);
+};
+
+// --- Preview while browsing ----------------------------------------------------
+// Like Go to Symbol, the highlighted row opens in a preview editor tab (italic
+// title) while focus stays in the picker. Escape closes that tab; Enter keeps it.
+
+/** Wait for the highlight to settle before opening, so arrowing past rows stays fast. */
+const PREVIEW_DELAY_MS = 150;
+
+const sameTabInput = (a: unknown, b: unknown): boolean => {
+  if (a instanceof TabInputText && b instanceof TabInputText) {
+    return a.uri.toString() === b.uri.toString();
+  }
+  if (a instanceof TabInputTextDiff && b instanceof TabInputTextDiff) {
+    return (
+      a.original.toString() === b.original.toString() &&
+      a.modified.toString() === b.modified.toString()
+    );
+  }
+  return false;
+};
+
+/** Closes the preview tab the picker opened, if it's still an untouched preview. */
+const closePreviewTab = async (opened: Tab): Promise<void> => {
+  const tab = window.tabGroups.all
+    .flatMap((group) => group.tabs)
+    .find(
+      (candidate) =>
+        candidate.isPreview && sameTabInput(candidate.input, opened.input),
+    );
+  if (tab) {
+    await window.tabGroups.close(tab);
+  }
+};
+
 const toFileItem = (
   entry: ChangeEntry,
+  viewButton: QuickInputButton,
   alwaysShow: boolean,
 ): FileQuickPickItem => ({
   // Filename only (like default Quick Open).
@@ -365,8 +466,8 @@ const toFileItem = (
   // File icon theme icon: needs ThemeIcon.File + resourceUri together (VS Code 1.108+).
   iconPath: ThemeIcon.File,
   resourceUri: entry.uri,
-  buttons: hasOpenFileButton(entry)
-    ? [openFileButton, ...GROUP_BUTTONS[entry.group]]
+  buttons: hasViewButton(entry)
+    ? [viewButton, ...GROUP_BUTTONS[entry.group]]
     : GROUP_BUTTONS[entry.group],
   // Set when the extension filters rows itself, so Quick Pick doesn't re-filter them.
   alwaysShow,
@@ -375,6 +476,8 @@ const toFileItem = (
 const toQuickPickItems = (
   entries: ReadonlyArray<ChangeEntry>,
   multiRoot: boolean,
+  /** Open File or Open Changes, whichever Enter doesn't do. */
+  viewButton: QuickInputButton,
   alwaysShow = false,
   /** When searching: best matches first within each group. */
   scoreOf?: (entry: ChangeEntry) => number,
@@ -411,7 +514,7 @@ const toQuickPickItems = (
         kind: QuickPickItemKind.Separator,
       });
       const fileItems = groupEntries
-        .map((entry) => toFileItem(entry, alwaysShow))
+        .map((entry) => toFileItem(entry, viewButton, alwaysShow))
         .sort(sortStringPropertyDESC("status"));
       if (scoreOf) {
         // Stable sort: equal scores keep the status order.
@@ -873,7 +976,10 @@ const placeCursorAtEnd = (quickPick: QuickPick<QuickPickItem>): void => {
 };
 
 /** The picked row, and whether to open the file or its diff. */
-type Selection = { item: FileQuickPickItem; view: "file" | "changes" };
+type Selection = { item: FileQuickPickItem; view: View };
+
+const isFileItem = (item: QuickPickItem): item is FileQuickPickItem =>
+  "uri" in item;
 
 /**
  * Arguments of `pick-changes.open`, e.g. from a keybinding:
@@ -888,6 +994,8 @@ const initialQuery = (args: OpenArgs | undefined): string => {
 };
 
 const open = async (args?: OpenArgs): Promise<void> => {
+  const { enterAction, showLineCounts, previewWhileBrowsing } = getSettings();
+  const viewButton = VIEW_BUTTONS[enterAction];
   const multiRoot = (workspace.workspaceFolders?.length ?? 0) > 1;
   const quickPick = window.createQuickPick();
   quickPick.matchOnDescription = true;
@@ -909,7 +1017,7 @@ const open = async (args?: OpenArgs): Promise<void> => {
     const query = parseQuery(quickPick.value);
     quickPick.title = describeQuery(query);
     if (!query.hasFilters && query.terms.length === 0) {
-      quickPick.items = toQuickPickItems(entries, multiRoot);
+      quickPick.items = toQuickPickItems(entries, multiRoot, viewButton.button);
       return;
     }
     // Quick Pick's built-in matching checks the label and description
@@ -924,6 +1032,7 @@ const open = async (args?: OpenArgs): Promise<void> => {
       ...toQuickPickItems(
         entries.filter((entry) => (scores.get(entry) ?? -1) >= 0),
         multiRoot,
+        viewButton.button,
         true,
         (entry) => scores.get(entry) ?? 0,
       ),
@@ -931,7 +1040,7 @@ const open = async (args?: OpenArgs): Promise<void> => {
   };
 
   const refresh = async (): Promise<void> => {
-    entries = await gitStatus();
+    entries = await gitStatus(showLineCounts);
     render();
   };
 
@@ -949,12 +1058,47 @@ const open = async (args?: OpenArgs): Promise<void> => {
     }
   };
 
+  /** Set once a row is picked or the picker closes: no more previews. */
+  let done = false;
+  let previewTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Previews open one at a time, in order. */
+  let previewQueue: Promise<void> = Promise.resolve();
+  let preview: { key: string; tab: Tab | undefined } | undefined;
+  const previewKey = (item: FileQuickPickItem, view: View): string =>
+    `${view} ${item.group} ${item.uri.toString()}`;
+
+  const showPreview = (item: FileQuickPickItem): void => {
+    previewQueue = previewQueue
+      .then(async () => {
+        const key = previewKey(item, enterAction);
+        if (done || preview?.key === key) {
+          return;
+        }
+        await openItem(item, enterAction, {
+          preview: true,
+          preserveFocus: true,
+        });
+        const tab = window.tabGroups.activeTabGroup.activeTab;
+        preview = { key, tab: tab?.isPreview ? tab : undefined };
+      })
+      .catch(() => {
+        // A failed preview isn't worth an error while browsing.
+      });
+  };
+
   quickPick.onDidChangeActive((items) => {
+    const item = items[0];
     void commands.executeCommand(
       "setContext",
       SUGGESTION_CONTEXT,
-      items[0] !== undefined && isInsertItem(items[0]),
+      item !== undefined && isInsertItem(item),
     );
+    if (previewWhileBrowsing) {
+      clearTimeout(previewTimer);
+      if (item && isFileItem(item)) {
+        previewTimer = setTimeout(() => showPreview(item), PREVIEW_DELAY_MS);
+      }
+    }
   });
   quickPick.onDidChangeValue(render);
   await refresh();
@@ -967,6 +1111,8 @@ const open = async (args?: OpenArgs): Promise<void> => {
           return;
         }
         settled = true;
+        done = true;
+        clearTimeout(previewTimer);
         resolve(value);
       };
 
@@ -979,15 +1125,15 @@ const open = async (args?: OpenArgs): Promise<void> => {
         if (!item || item.kind === QuickPickItemKind.Separator) {
           settle(undefined);
         } else {
-          settle({ item: item as FileQuickPickItem, view: "changes" });
+          settle({ item: item as FileQuickPickItem, view: enterAction });
         }
         quickPick.hide();
       });
 
       quickPick.onDidTriggerItemButton(async (event) => {
         const item = event.item as FileQuickPickItem;
-        if (event.button === openFileButton) {
-          settle({ item, view: "file" });
+        if (event.button === viewButton.button) {
+          settle({ item, view: viewButton.view });
           quickPick.hide();
           return;
         }
@@ -1029,17 +1175,21 @@ const open = async (args?: OpenArgs): Promise<void> => {
 
   quickPick.dispose();
 
+  // Escape, or a pick other than the previewed row: drop the preview tab, so
+  // the editor you were on comes back.
+  await previewQueue;
+  const keepsPreview =
+    selected !== undefined &&
+    preview?.key === previewKey(selected.item, selected.view);
+  if (preview?.tab && !keepsPreview) {
+    await closePreviewTab(preview.tab);
+  }
+
   if (!selected) {
     return;
   }
-
-  const { item, view } = selected;
-  if (view === "file") {
-    await window.showTextDocument(item.uri);
-    return;
-  }
-  // Untracked files and conflicts have no diff, so this opens the file itself.
-  await openChanges(item);
+  // A pinned tab, like Quick Open; this also keeps a previewed row's tab.
+  await openItem(selected.item, selected.view, { preview: false });
 };
 
 /**

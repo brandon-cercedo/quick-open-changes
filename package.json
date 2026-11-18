@@ -55,6 +55,34 @@
         "category": "Pick Changes"
       }
     ],
+    "configuration": {
+      "title": "Pick Changes",
+      "properties": {
+        "pickChanges.enterAction": {
+          "type": "string",
+          "enum": [
+            "diff",
+            "file"
+          ],
+          "enumDescriptions": [
+            "Open the file's diff, like Source Control. The row's button opens the file.",
+            "Open the file itself. The row's button opens its diff."
+          ],
+          "default": "diff",
+          "markdownDescription": "What **Enter** opens for a changed file. Untracked files and conflicts always open as files, and deleted files show their last version."
+        },
+        "pickChanges.showLineCounts": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show `+N -M` line counts on each row. Turn off to skip the `git diff` runs in very large repositories."
+        },
+        "pickChanges.previewWhileBrowsing": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Open the highlighted row in a preview editor tab while you move through the picker, like **Go to Symbol**. **Escape** closes the preview, and **Enter** keeps it."
+        }
+      }
+    },
     "menus": {
       "commandPalette": [
         {
