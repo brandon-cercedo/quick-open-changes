@@ -86,12 +86,12 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "pnpm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
+    "compile:watch": "tsc -watch -p ./",
+    "vscode:prepublish": "pnpm compile",
+    "dev": "pnpm compile && code --extensionDevelopmentPath=\"$PWD\" \"$PWD\"",
     "lint": "eslint src",
-    "pretest": "pnpm run compile && pnpm run lint",
-    "test": "vscode-test",
+    "test": "pnpm compile && pnpm lint && vscode-test",
     "package": "vsce package"
   },
   "dependencies": {

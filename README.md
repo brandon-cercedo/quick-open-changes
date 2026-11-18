@@ -73,12 +73,11 @@ pnpm install
 Build the extension and open this folder in a VS Code window that runs it:
 
 ```sh
-pnpm run compile && code --extensionDevelopmentPath="$PWD" "$PWD"
+pnpm dev
 ```
 
-Run the tests and lint before opening a PR:
+Run the tests before opening a PR (this compiles and lints first):
 
 ```sh
 pnpm test
-pnpm run lint
 ```
