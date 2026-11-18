@@ -8,6 +8,7 @@ import {
   QuickPickItem,
   QuickPickItemKind,
   Tab,
+  TabInputCustom,
   TabInputText,
   TabInputTextDiff,
   TextDocumentShowOptions,
@@ -339,6 +340,17 @@ const hasViewButton = (entry: { group: ChangeGroup; status: string }): boolean =
   hasChanges(entry) && entry.status !== "D";
 
 /**
+ * Opens a file in its default editor: text, or a viewer such as the image
+ * preview. `showTextDocument` would fail on binary files.
+ */
+const openFile = async (
+  uri: Uri,
+  options: TextDocumentShowOptions,
+): Promise<void> => {
+  await commands.executeCommand("vscode.open", uri, options);
+};
+
+/**
  * Opens a row the way the Source Control view does: staged rows compare HEAD
  * with the index, unstaged rows compare the index with the working tree.
  * Added and deleted files have only one side, so that side opens on its own.
@@ -348,7 +360,7 @@ const openChanges = async (
   options: TextDocumentShowOptions,
 ): Promise<void> => {
   if (!hasChanges(item)) {
-    await window.showTextDocument(item.uri, options);
+    await openFile(item.uri, options);
     return;
   }
   const git = await getGitApi();
@@ -408,7 +420,7 @@ const openItem = async (
   options: TextDocumentShowOptions,
 ): Promise<void> => {
   if (view === "file" && item.status !== "D") {
-    await window.showTextDocument(item.uri, options);
+    await openFile(item.uri, options);
     return;
   }
   // Untracked files and conflicts have no diff, so this opens the file itself.
@@ -422,17 +434,23 @@ const openItem = async (
 /** Wait for the highlight to settle before opening, so arrowing past rows stays fast. */
 const PREVIEW_DELAY_MS = 150;
 
+/** What a tab shows: text, a diff, or a custom editor such as the image preview. */
+const tabInputKey = (input: unknown): string | undefined => {
+  if (input instanceof TabInputText) {
+    return `text ${input.uri.toString()}`;
+  }
+  if (input instanceof TabInputTextDiff) {
+    return `diff ${input.original.toString()} ${input.modified.toString()}`;
+  }
+  if (input instanceof TabInputCustom) {
+    return `custom ${input.viewType} ${input.uri.toString()}`;
+  }
+  return undefined;
+};
+
 const sameTabInput = (a: unknown, b: unknown): boolean => {
-  if (a instanceof TabInputText && b instanceof TabInputText) {
-    return a.uri.toString() === b.uri.toString();
-  }
-  if (a instanceof TabInputTextDiff && b instanceof TabInputTextDiff) {
-    return (
-      a.original.toString() === b.original.toString() &&
-      a.modified.toString() === b.modified.toString()
-    );
-  }
-  return false;
+  const key = tabInputKey(a);
+  return key !== undefined && key === tabInputKey(b);
 };
 
 /** Closes the preview tab the picker opened, if it's still an untouched preview. */

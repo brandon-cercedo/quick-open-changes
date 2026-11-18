@@ -12,6 +12,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 - Turning off `pickChanges.showLineCounts` also skips the `git diff` runs
 - Preview while browsing opens the highlighted row in a preview tab; **Escape** closes it, **Enter** keeps it
 - Picked files open in a pinned tab, like Quick Open
+- Fix binary files (images, etc.) failing to open with "File seems to be binary": they now open in their default viewer, also in the preview
 - Add **Pick Changes: Copy Relative Path with Position** (`Cmd+G` `C` / `Ctrl+G` `C`): copies `path:line:column` of the cursor, e.g. `README.md:13:12`
 - Add pre-filtered commands: **Pick Changes: Staged Git changes**, **Unstaged Git changes** (`Cmd+G` `U` / `Ctrl+G` `U`) and **Git merge conflicts**
 - `pick-changes.open` takes a `query` argument, so a keybinding can open the picker with any filters typed in

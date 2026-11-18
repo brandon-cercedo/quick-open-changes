@@ -70,4 +70,19 @@ suite('Extension Test Suite', () => {
     assert.strictEqual(config.get('showLineCounts'), true);
     assert.strictEqual(config.get('previewWhileBrowsing'), false);
   });
+
+  // Rows open through `vscode.open`, which picks the default editor, so
+  // binary files like images open instead of failing as text.
+  test('opens an image in a preview tab with vscode.open', async () => {
+    const icon = vscode.Uri.file(require.resolve('../../images/icon.png'));
+    try {
+      await vscode.commands.executeCommand('vscode.open', icon, { preview: true });
+      const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
+      assert.ok(tab?.input instanceof vscode.TabInputCustom, 'should open in the image preview');
+      assert.strictEqual(tab.input.uri.fsPath, icon.fsPath);
+      assert.strictEqual(tab.isPreview, true);
+    } finally {
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    }
+  });
 });
