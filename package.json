@@ -2,7 +2,7 @@
   "name": "pick-changes",
   "displayName": "Pick Changes",
   "description": "Open, stage and filter your git changes from a Quick Pick. Forked from Quick Open Git Status.",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "publisher": "brandon-cercedo",
   "license": "MIT",
   "packageManager": "pnpm@10.16.1",

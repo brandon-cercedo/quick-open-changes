@@ -4,7 +4,7 @@ All notable changes to the "pick-changes" extension (forked from "quick-open-git
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
-## [Unreleased]
+## [0.4.0]
 
 - Add **Pick Changes: Copy Relative Path with Position** (`Cmd+G` `C` / `Ctrl+G` `C`): copies `path:line:column` of the cursor, e.g. `README.md:13:12`
 - Add pre-filtered commands: **Pick Changes: Staged Git changes**, **Unstaged Git changes** (`Cmd+G` `U` / `Ctrl+G` `U`) and **Git merge conflicts**
