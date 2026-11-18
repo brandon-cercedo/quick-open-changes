@@ -44,6 +44,11 @@
         "category": "Pick Changes"
       },
       {
+        "command": "pick-changes.copyRelativePathWithPosition",
+        "title": "Copy Relative Path with Position",
+        "category": "Pick Changes"
+      },
+      {
         "command": "pick-changes.acceptSuggestion",
         "title": "Accept Filter Suggestion",
         "category": "Pick Changes"
@@ -67,6 +72,11 @@
         "command": "pick-changes.openUnstaged",
         "key": "ctrl+g u",
         "mac": "cmd+g u"
+      },
+      {
+        "command": "pick-changes.copyRelativePathWithPosition",
+        "key": "ctrl+g c",
+        "mac": "cmd+g c"
       },
       {
         "key": "tab",

@@ -46,6 +46,8 @@ As you type a filter, suggestions show each matching value with its file count. 
 | **Pick Changes: Unstaged Git changes** | `%unstaged`           | `Cmd+G` `U`      | `Ctrl+G` `U`             |
 | **Pick Changes: Git merge conflicts**  | `%merge`              |                  |                          |
 
+**Pick Changes: Copy Relative Path with Position** (`Cmd+G` `C` / `Ctrl+G` `C`) copies the active file's path and cursor position, like `README.md:13:12`. Lines and columns start at 1, and a tab counts as one column. In multi-root workspaces the path starts with the folder name.
+
 To open the picker with any query, bind `pick-changes.open` with a `query` argument in `keybindings.json`:
 
 ```json

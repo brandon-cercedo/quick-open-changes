@@ -49,4 +49,18 @@ suite('Extension Test Suite', () => {
       quickPick.dispose();
     }
   });
+
+  test('formats a cursor position as path:line:column, starting at 1', () => {
+    const { formatPosition } = require('../extension') as typeof import('../extension');
+    assert.strictEqual(formatPosition('README.md', new vscode.Position(12, 11)), 'README.md:13:12');
+  });
+
+  test('copies the cursor position of the active editor', async () => {
+    const readme = vscode.Uri.file(require.resolve('../../README.md'));
+    const editor = await vscode.window.showTextDocument(readme);
+    editor.selection = new vscode.Selection(12, 11, 12, 11);
+    await vscode.commands.executeCommand('pick-changes.copyRelativePathWithPosition');
+    // No workspace is open in the test host, so the path stays absolute.
+    assert.strictEqual(await vscode.env.clipboard.readText(), `${readme.fsPath}:13:12`);
+  });
 });

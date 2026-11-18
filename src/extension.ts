@@ -1,5 +1,6 @@
 import {
   commands,
+  env,
   ExtensionContext,
   extensions,
   QuickInputButton,
@@ -1041,6 +1042,31 @@ const open = async (args?: OpenArgs): Promise<void> => {
   await openChanges(item);
 };
 
+/**
+ * `path:line:column` of the cursor in the active editor, e.g. `README.md:13:12`.
+ * Lines and columns start at 1, and a tab counts as one column, like compiler
+ * output and terminal links.
+ */
+export const formatPosition = (
+  relativePath: string,
+  position: { line: number; character: number },
+): string => `${relativePath}:${position.line + 1}:${position.character + 1}`;
+
+const copyRelativePathWithPosition = async (): Promise<void> => {
+  const editor = window.activeTextEditor;
+  if (!editor) {
+    void window.showInformationMessage("Open a file to copy its path.");
+    return;
+  }
+  // The workspace folder name is prepended only in multi-root workspaces;
+  // files outside the workspace keep their full path.
+  const relativePath = workspace.asRelativePath(editor.document.uri);
+  // With text selected, the cursor is the end of the selection you moved.
+  const text = formatPosition(relativePath, editor.selection.active);
+  await env.clipboard.writeText(text);
+  window.setStatusBarMessage(`Copied ${text}`, 3000);
+};
+
 /** Command Palette shortcuts (package.json) that open the picker pre-filtered. */
 const PRESET_QUERIES: Record<string, string> = {
   "pick-changes.openStaged": "%staged",
@@ -1055,6 +1081,10 @@ export function activate(context: ExtensionContext) {
     ),
     ...Object.entries(PRESET_QUERIES).map(([command, query]) =>
       commands.registerCommand(command, () => open({ query })),
+    ),
+    commands.registerCommand(
+      "pick-changes.copyRelativePathWithPosition",
+      copyRelativePathWithPosition,
     ),
     // Bound to Tab while a filter suggestion is highlighted (see package.json).
     commands.registerCommand("pick-changes.acceptSuggestion", () =>
