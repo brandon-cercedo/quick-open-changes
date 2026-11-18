@@ -6,6 +6,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [0.4.0]
 
+- Add an extension icon
 - Add **Pick Changes: Copy Relative Path with Position** (`Cmd+G` `C` / `Ctrl+G` `C`): copies `path:line:column` of the cursor, e.g. `README.md:13:12`
 - Add pre-filtered commands: **Pick Changes: Staged Git changes**, **Unstaged Git changes** (`Cmd+G` `U` / `Ctrl+G` `U`) and **Git merge conflicts**
 - `pick-changes.open` takes a `query` argument, so a keybinding can open the picker with any filters typed in

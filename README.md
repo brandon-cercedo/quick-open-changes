@@ -81,3 +81,7 @@ Run the tests before opening a PR (this compiles and lints first):
 ```sh
 pnpm test
 ```
+
+## Credits
+
+Icon: <a href="https://www.flaticon.com/free-icons/guitar-pick" title="guitar pick icons">Guitar pick icons created by Magnific - Flaticon</a>
