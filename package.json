@@ -2,7 +2,12 @@
   "name": "pick-changes",
   "displayName": "Pick Changes",
   "description": "Open, stage and filter your git changes from a Quick Pick. Forked from Quick Open Git Status.",
-  "version": "0.3.3",
+  "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#FFC83D",
+    "theme": "light"
+  },
+  "version": "0.4.0",
   "publisher": "brandon-cercedo",
   "license": "MIT",
   "packageManager": "pnpm@10.16.1",
@@ -13,6 +18,12 @@
     "Other",
     "Visualization"
   ],
+  "keywords": [
+    "git",
+    "changes",
+    "pick",
+    "diff"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/brandon-cercedo/quick-open-changes.git"
@@ -20,18 +31,68 @@
   "bugs": {
     "url": "https://github.com/brandon-cercedo/quick-open-changes/issues"
   },
-  "main": "./out/extension.js",
+  "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "pick-changes.open",
-        "title": "Pick Git changes"
+        "title": "All Git changes",
+        "category": "Pick Changes"
+      },
+      {
+        "command": "pick-changes.openStaged",
+        "title": "Staged Git changes",
+        "category": "Pick Changes"
+      },
+      {
+        "command": "pick-changes.openUnstaged",
+        "title": "Unstaged Git changes",
+        "category": "Pick Changes"
+      },
+      {
+        "command": "pick-changes.openConflicts",
+        "title": "Git merge conflicts",
+        "category": "Pick Changes"
+      },
+      {
+        "command": "pick-changes.copyRelativePathWithPosition",
+        "title": "Copy Relative Path with Position",
+        "category": "Pick Changes"
       },
       {
         "command": "pick-changes.acceptSuggestion",
-        "title": "Accept Filter Suggestion"
+        "title": "Accept Filter Suggestion",
+        "category": "Pick Changes"
       }
     ],
+    "configuration": {
+      "title": "Pick Changes",
+      "properties": {
+        "pickChanges.enterAction": {
+          "type": "string",
+          "enum": [
+            "diff",
+            "file"
+          ],
+          "enumDescriptions": [
+            "Open the file's diff, like Source Control. The row's button opens the file.",
+            "Open the file itself. The row's button opens its diff."
+          ],
+          "default": "diff",
+          "markdownDescription": "What **Enter** opens for a changed file. Untracked files and conflicts always open as files, and deleted files show their last version."
+        },
+        "pickChanges.showLineCounts": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show `+N -M` line counts on each row. Turn off to skip the `git diff` runs in very large repositories."
+        },
+        "pickChanges.previewWhileBrowsing": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Open the highlighted row in a preview editor tab while you move through the picker, like **Go to Symbol**. **Escape** closes the preview, and **Enter** keeps it."
+        }
+      }
+    },
     "menus": {
       "commandPalette": [
         {
@@ -47,6 +108,16 @@
         "mac": "cmd+g p"
       },
       {
+        "command": "pick-changes.openUnstaged",
+        "key": "ctrl+g u",
+        "mac": "cmd+g u"
+      },
+      {
+        "command": "pick-changes.copyRelativePathWithPosition",
+        "key": "ctrl+g c",
+        "mac": "cmd+g c"
+      },
+      {
         "key": "tab",
         "command": "pick-changes.acceptSuggestion",
         "when": "inQuickOpen && pickChanges.suggestionActive"
@@ -54,13 +125,16 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "pnpm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
+    "compile:watch": "tsc -watch -p ./",
+    "bundle": "node esbuild.mjs",
+    "bundle:watch": "node esbuild.mjs --watch",
+    "dev": "pnpm bundle && code --extensionDevelopmentPath=\"$PWD\" \"$PWD\"",
     "lint": "eslint src",
-    "pretest": "pnpm run compile && pnpm run lint",
-    "test": "vscode-test",
-    "package": "vsce package"
+    "type:check": "tsc -p ./ --noEmit",
+    "test": "pnpm compile && pnpm lint && pnpm bundle && vscode-test",
+    "vscode:prepublish": "pnpm type:check && node esbuild.mjs --production",
+    "package": "vsce package --no-dependencies"
   },
   "dependencies": {
     "simple-git": "^4.0.2",
@@ -73,6 +147,7 @@
     "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^4.1.0",
+    "esbuild": "^0.28.2",
     "eslint": "^10.14.0",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.72.1"

@@ -4,10 +4,24 @@ All notable changes to the "pick-changes" extension (forked from "quick-open-git
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
-## [Unreleased]
+## [0.4.0]
 
-- Add a default shortcut for Pick Git changes: `Cmd+G` `P` (macOS) / `Ctrl+G` `P` (Windows/Linux)
-- Rename the extension to **Pick Changes** (`pick-changes`); the command is now `Pick Git changes` (`pick-changes.open`)
+- Bundle the extension with esbuild into a single file: a much smaller package and faster startup
+- Add an extension icon, a yellow Marketplace banner and search keywords
+- Add settings: `pickChanges.enterAction` (`diff` or `file`), `pickChanges.showLineCounts` and `pickChanges.previewWhileBrowsing`
+- With `pickChanges.enterAction` set to `file`, the row button becomes **Open Changes**
+- Turning off `pickChanges.showLineCounts` also skips the `git diff` runs
+- Preview while browsing opens the highlighted row in a preview tab; **Escape** closes it, **Enter** keeps it
+- Picked files open in a pinned tab, like Quick Open
+- Fix binary files (images, etc.) failing to open with "File seems to be binary": they now open in their default viewer, also in the preview
+- Add **Pick Changes: Copy Relative Path with Position** (`Cmd+G` `C` / `Ctrl+G` `C`): copies `path:line:column` of the cursor, e.g. `README.md:13:12`
+- Add pre-filtered commands: **Pick Changes: Staged Git changes**, **Unstaged Git changes** (`Cmd+G` `U` / `Ctrl+G` `U`) and **Git merge conflicts**
+- `pick-changes.open` takes a `query` argument, so a keybinding can open the picker with any filters typed in
+- Picking a file opens its diff, like Source Control: staged rows compare `HEAD` with the index, unstaged rows compare the index with the working tree (untracked files and conflicts still open as files)
+- Add an **Open File** button to open the file itself instead of its diff
+- Picking a deleted file opens its last version instead of focusing the Source Control view
+- Add a default shortcut for **Pick Changes: All Git changes**: `Cmd+G` `P` (macOS) / `Ctrl+G` `P` (Windows/Linux)
+- Rename the extension to **Pick Changes** (`pick-changes`); the command is now `Pick Changes: All Git changes` (`pick-changes.open`)
 - Add chainable search filters: `#repo`, `@status`, `%staged` / `%unstaged` / `%merge`, and `?` for help
 - Press Tab (like Enter) to pick the highlighted filter suggestion
 - Show filter suggestions with match counts while typing `#`, `@` or `%`

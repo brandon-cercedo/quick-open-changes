@@ -1,10 +1,17 @@
 import {
   commands,
+  env,
   ExtensionContext,
+  extensions,
   QuickInputButton,
   QuickPick,
   QuickPickItem,
   QuickPickItemKind,
+  Tab,
+  TabInputCustom,
+  TabInputText,
+  TabInputTextDiff,
+  TextDocumentShowOptions,
   ThemeIcon,
   Uri,
   window,
@@ -45,6 +52,8 @@ type ChangeEntry = {
   status: string;
   relativePath: string;
   uri: Uri;
+  /** Path before a staged rename: the diff's left side comes from here at HEAD. */
+  originalUri?: Uri;
   folderName: string;
   workspacePath: string;
   stats?: DiffStats;
@@ -53,9 +62,43 @@ type ChangeEntry = {
 type FileQuickPickItem = QuickPickItem & {
   group: ChangeGroup;
   uri: Uri;
+  originalUri?: Uri;
   status: string;
   relativePath: string;
   workspacePath: string;
+};
+
+// --- Settings ------------------------------------------------------------------
+
+/** What a row opens: its diff, or the file itself. */
+type View = "diff" | "file";
+
+/** `pickChanges.*` settings (package.json), read each time the picker opens. */
+const getSettings = () => {
+  const config = workspace.getConfiguration("pickChanges");
+  const enterAction: View =
+    config.get<string>("enterAction") === "file" ? "file" : "diff";
+  return {
+    enterAction,
+    showLineCounts: config.get<boolean>("showLineCounts", true),
+    previewWhileBrowsing: config.get<boolean>("previewWhileBrowsing", false),
+  };
+};
+
+const openFileButton: QuickInputButton = {
+  iconPath: new ThemeIcon("go-to-file"),
+  tooltip: "Open File",
+};
+
+const openChangesButton: QuickInputButton = {
+  iconPath: new ThemeIcon("git-compare"),
+  tooltip: "Open Changes",
+};
+
+/** The row button opens whatever Enter doesn't. */
+const VIEW_BUTTONS: Record<View, { button: QuickInputButton; view: View }> = {
+  diff: { button: openFileButton, view: "file" },
+  file: { button: openChangesButton, view: "diff" },
 };
 
 const stageButton: QuickInputButton = {
@@ -165,6 +208,7 @@ const getDiffStatsMap = async (
 
 const gitStatusForFolder = async (
   workspaceFolder: WorkspaceFolder,
+  showLineCounts: boolean,
 ): Promise<ReadonlyArray<ChangeEntry>> => {
   const workspacePath = workspaceFolder.uri.fsPath;
   const git: SimpleGit = simpleGit(workspacePath);
@@ -180,12 +224,15 @@ const gitStatusForFolder = async (
     return [];
   }
 
-  const [stagedStats, unstagedStats] = await Promise.all([
-    // Index vs HEAD (vs the empty tree on a branch with no commits yet).
-    getDiffStatsMap(git, ["--cached"]),
-    // Working tree vs index.
-    getDiffStatsMap(git, []),
-  ]);
+  // With line counts hidden, skip the two `git diff` runs entirely.
+  const [stagedStats, unstagedStats] = showLineCounts
+    ? await Promise.all([
+        // Index vs HEAD (vs the empty tree on a branch with no commits yet).
+        getDiffStatsMap(git, ["--cached"]),
+        // Working tree vs index.
+        getDiffStatsMap(git, []),
+      ])
+    : [new Map<string, DiffStats>(), new Map<string, DiffStats>()];
 
   const entriesPerFile = await Promise.all(
     files.map(async (file): Promise<ChangeEntry[]> => {
@@ -207,6 +254,10 @@ const gitStatusForFolder = async (
           ...base,
           group: "staged",
           status: file.index,
+          originalUri:
+            file.index === "R" && file.from
+              ? Uri.joinPath(workspaceFolder.uri, file.from)
+              : undefined,
           stats: stagedStats.get(file.path),
         });
       }
@@ -215,7 +266,9 @@ const gitStatusForFolder = async (
           ...base,
           group: "changes",
           status: "U",
-          stats: await countUntrackedLines(uri.fsPath),
+          stats: showLineCounts
+            ? await countUntrackedLines(uri.fsPath)
+            : undefined,
         });
       } else if (file.working_dir !== " ") {
         entries.push({
@@ -232,18 +285,190 @@ const gitStatusForFolder = async (
   return entriesPerFile.flat();
 };
 
-const gitStatus = async (): Promise<ReadonlyArray<ChangeEntry>> => {
+const gitStatus = async (
+  showLineCounts: boolean,
+): Promise<ReadonlyArray<ChangeEntry>> => {
   const folders = workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
     return [];
   }
 
-  const results = await Promise.all(folders.map(gitStatusForFolder));
+  const results = await Promise.all(
+    folders.map((folder) => gitStatusForFolder(folder, showLineCounts)),
+  );
   return results.flat();
+};
+
+// --- Diff view -----------------------------------------------------------------
+// Diffs use the built-in Git extension's `git:` URIs, the same ones the Source
+// Control view opens, so a diff opened here reuses the same editor tab.
+
+/** The one method used from the Git extension API (`vscode.git`, version 1). */
+type GitApi = { toGitUri(uri: Uri, ref: string): Uri };
+
+/** `git:` ref for the index version of a file. */
+const INDEX_REF = "";
+
+const getGitApi = async (): Promise<GitApi | undefined> => {
+  const extension = extensions.getExtension<{ getAPI(version: 1): GitApi }>(
+    "vscode.git",
+  );
+  if (!extension) {
+    return undefined;
+  }
+  try {
+    const exports = extension.isActive
+      ? extension.exports
+      : await extension.activate();
+    return exports.getAPI(1);
+  } catch {
+    // Throws when Git is turned off (`git.enabled: false`).
+    return undefined;
+  }
+};
+
+/** Untracked files and conflicts have no diff: they open as plain files. */
+const hasChanges = (entry: { group: ChangeGroup; status: string }): boolean =>
+  entry.group !== "merge" && entry.status !== "U";
+
+/**
+ * Rows where the diff and the file differ, so they get the Open File / Open
+ * Changes button. Deleted files have no file on disk, and rows without a diff
+ * only have the file.
+ */
+const hasViewButton = (entry: { group: ChangeGroup; status: string }): boolean =>
+  hasChanges(entry) && entry.status !== "D";
+
+/**
+ * Opens a file in its default editor: text, or a viewer such as the image
+ * preview. `showTextDocument` would fail on binary files.
+ */
+const openFile = async (
+  uri: Uri,
+  options: TextDocumentShowOptions,
+): Promise<void> => {
+  await commands.executeCommand("vscode.open", uri, options);
+};
+
+/**
+ * Opens a row the way the Source Control view does: staged rows compare HEAD
+ * with the index, unstaged rows compare the index with the working tree.
+ * Added and deleted files have only one side, so that side opens on its own.
+ */
+const openChanges = async (
+  item: FileQuickPickItem,
+  options: TextDocumentShowOptions,
+): Promise<void> => {
+  if (!hasChanges(item)) {
+    await openFile(item.uri, options);
+    return;
+  }
+  const git = await getGitApi();
+  if (!git) {
+    void window.showWarningMessage(
+      "Can't open changes: the built-in Git extension is disabled.",
+    );
+    return;
+  }
+
+  const name = path.basename(item.relativePath);
+  const index = git.toGitUri(item.uri, INDEX_REF);
+  const openSide = (uri: Uri, label: string) =>
+    commands.executeCommand("vscode.open", uri, options, `${name} (${label})`);
+  const openDiff = (left: Uri, right: Uri, label: string) =>
+    commands.executeCommand(
+      "vscode.diff",
+      left,
+      right,
+      `${name} (${label})`,
+      options,
+    );
+
+  if (item.group === "staged") {
+    switch (item.status) {
+      case "A":
+      case "C":
+        await openSide(index, "Index");
+        return;
+      case "D":
+        await openSide(git.toGitUri(item.uri, "HEAD"), "Deleted");
+        return;
+      default:
+        await openDiff(
+          git.toGitUri(item.originalUri ?? item.uri, "HEAD"),
+          index,
+          "Index",
+        );
+        return;
+    }
+  }
+
+  if (item.status === "D") {
+    await openSide(index, "Deleted");
+    return;
+  }
+  await openDiff(index, item.uri, "Working Tree");
+};
+
+/**
+ * Opens a row as a diff or as the file. A deleted file has no file on disk, so
+ * it always shows its last version.
+ */
+const openItem = async (
+  item: FileQuickPickItem,
+  view: View,
+  options: TextDocumentShowOptions,
+): Promise<void> => {
+  if (view === "file" && item.status !== "D") {
+    await openFile(item.uri, options);
+    return;
+  }
+  // Untracked files and conflicts have no diff, so this opens the file itself.
+  await openChanges(item, options);
+};
+
+// --- Preview while browsing ----------------------------------------------------
+// Like Go to Symbol, the highlighted row opens in a preview editor tab (italic
+// title) while focus stays in the picker. Escape closes that tab; Enter keeps it.
+
+/** Wait for the highlight to settle before opening, so arrowing past rows stays fast. */
+const PREVIEW_DELAY_MS = 150;
+
+/** What a tab shows: text, a diff, or a custom editor such as the image preview. */
+const tabInputKey = (input: unknown): string | undefined => {
+  if (input instanceof TabInputText) {
+    return `text ${input.uri.toString()}`;
+  }
+  if (input instanceof TabInputTextDiff) {
+    return `diff ${input.original.toString()} ${input.modified.toString()}`;
+  }
+  if (input instanceof TabInputCustom) {
+    return `custom ${input.viewType} ${input.uri.toString()}`;
+  }
+  return undefined;
+};
+
+const sameTabInput = (a: unknown, b: unknown): boolean => {
+  const key = tabInputKey(a);
+  return key !== undefined && key === tabInputKey(b);
+};
+
+/** Closes the preview tab the picker opened, if it's still an untouched preview. */
+const closePreviewTab = async (opened: Tab): Promise<void> => {
+  const tab = window.tabGroups.all
+    .flatMap((group) => group.tabs)
+    .find(
+      (candidate) =>
+        candidate.isPreview && sameTabInput(candidate.input, opened.input),
+    );
+  if (tab) {
+    await window.tabGroups.close(tab);
+  }
 };
 
 const toFileItem = (
   entry: ChangeEntry,
+  viewButton: QuickInputButton,
   alwaysShow: boolean,
 ): FileQuickPickItem => ({
   // Filename only (like default Quick Open).
@@ -252,13 +477,16 @@ const toFileItem = (
   description: formatDescription(entry.relativePath, entry.status, entry.stats),
   group: entry.group,
   uri: entry.uri,
+  originalUri: entry.originalUri,
   status: entry.status,
   relativePath: entry.relativePath,
   workspacePath: entry.workspacePath,
   // File icon theme icon: needs ThemeIcon.File + resourceUri together (VS Code 1.108+).
   iconPath: ThemeIcon.File,
   resourceUri: entry.uri,
-  buttons: GROUP_BUTTONS[entry.group],
+  buttons: hasViewButton(entry)
+    ? [viewButton, ...GROUP_BUTTONS[entry.group]]
+    : GROUP_BUTTONS[entry.group],
   // Set when the extension filters rows itself, so Quick Pick doesn't re-filter them.
   alwaysShow,
 });
@@ -266,6 +494,8 @@ const toFileItem = (
 const toQuickPickItems = (
   entries: ReadonlyArray<ChangeEntry>,
   multiRoot: boolean,
+  /** Open File or Open Changes, whichever Enter doesn't do. */
+  viewButton: QuickInputButton,
   alwaysShow = false,
   /** When searching: best matches first within each group. */
   scoreOf?: (entry: ChangeEntry) => number,
@@ -302,7 +532,7 @@ const toQuickPickItems = (
         kind: QuickPickItemKind.Separator,
       });
       const fileItems = groupEntries
-        .map((entry) => toFileItem(entry, alwaysShow))
+        .map((entry) => toFileItem(entry, viewButton, alwaysShow))
         .sort(sortStringPropertyDESC("status"));
       if (scoreOf) {
         // Stable sort: equal scores keep the status order.
@@ -742,12 +972,57 @@ const keepSeparatorsWhileTyping = (quickPick: QuickPick<QuickPickItem>): void =>
   }
 };
 
-const open = async (): Promise<void> => {
+/**
+ * Puts the cursor after pre-filled text, so typing adds to the query instead
+ * of replacing it. By default a pre-filled Quick Pick value starts selected.
+ *
+ * Like `sortByLabel`, `valueSelection` on a Quick Pick is a proposed API
+ * (`valueSelectionInQuickPick`) whose setter VS Code doesn't gate. If that
+ * changes, the only loss is that the pre-filled text starts selected.
+ */
+const placeCursorAtEnd = (quickPick: QuickPick<QuickPickItem>): void => {
+  const end = quickPick.value.length;
+  try {
+    (
+      quickPick as QuickPick<QuickPickItem> & {
+        valueSelection: readonly [number, number];
+      }
+    ).valueSelection = [end, end];
+  } catch {
+    // Proposed API rejected: the pre-filled text starts selected.
+  }
+};
+
+/** The picked row, and whether to open the file or its diff. */
+type Selection = { item: FileQuickPickItem; view: View };
+
+const isFileItem = (item: QuickPickItem): item is FileQuickPickItem =>
+  "uri" in item;
+
+/**
+ * Arguments of `pick-changes.open`, e.g. from a keybinding:
+ * `"args": { "query": "@untracked" }` opens the picker with that filter typed in.
+ */
+type OpenArgs = { query?: unknown };
+
+/** Starting input: a finished query, so no filter suggestions pop up. */
+const initialQuery = (args: OpenArgs | undefined): string => {
+  const query = typeof args?.query === "string" ? args.query.trim() : "";
+  return query ? `${query} ` : "";
+};
+
+const open = async (args?: OpenArgs): Promise<void> => {
+  const { enterAction, showLineCounts, previewWhileBrowsing } = getSettings();
+  const viewButton = VIEW_BUTTONS[enterAction];
   const multiRoot = (workspace.workspaceFolders?.length ?? 0) > 1;
   const quickPick = window.createQuickPick();
   quickPick.matchOnDescription = true;
   quickPick.placeholder = PLACEHOLDER;
   keepSeparatorsWhileTyping(quickPick);
+  quickPick.value = initialQuery(args);
+  if (quickPick.value) {
+    placeCursorAtEnd(quickPick);
+  }
 
   let entries: ReadonlyArray<ChangeEntry> = [];
 
@@ -760,7 +1035,7 @@ const open = async (): Promise<void> => {
     const query = parseQuery(quickPick.value);
     quickPick.title = describeQuery(query);
     if (!query.hasFilters && query.terms.length === 0) {
-      quickPick.items = toQuickPickItems(entries, multiRoot);
+      quickPick.items = toQuickPickItems(entries, multiRoot, viewButton.button);
       return;
     }
     // Quick Pick's built-in matching checks the label and description
@@ -775,6 +1050,7 @@ const open = async (): Promise<void> => {
       ...toQuickPickItems(
         entries.filter((entry) => (scores.get(entry) ?? -1) >= 0),
         multiRoot,
+        viewButton.button,
         true,
         (entry) => scores.get(entry) ?? 0,
       ),
@@ -782,7 +1058,7 @@ const open = async (): Promise<void> => {
   };
 
   const refresh = async (): Promise<void> => {
-    entries = await gitStatus();
+    entries = await gitStatus(showLineCounts);
     render();
   };
 
@@ -800,24 +1076,61 @@ const open = async (): Promise<void> => {
     }
   };
 
+  /** Set once a row is picked or the picker closes: no more previews. */
+  let done = false;
+  let previewTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Previews open one at a time, in order. */
+  let previewQueue: Promise<void> = Promise.resolve();
+  let preview: { key: string; tab: Tab | undefined } | undefined;
+  const previewKey = (item: FileQuickPickItem, view: View): string =>
+    `${view} ${item.group} ${item.uri.toString()}`;
+
+  const showPreview = (item: FileQuickPickItem): void => {
+    previewQueue = previewQueue
+      .then(async () => {
+        const key = previewKey(item, enterAction);
+        if (done || preview?.key === key) {
+          return;
+        }
+        await openItem(item, enterAction, {
+          preview: true,
+          preserveFocus: true,
+        });
+        const tab = window.tabGroups.activeTabGroup.activeTab;
+        preview = { key, tab: tab?.isPreview ? tab : undefined };
+      })
+      .catch(() => {
+        // A failed preview isn't worth an error while browsing.
+      });
+  };
+
   quickPick.onDidChangeActive((items) => {
+    const item = items[0];
     void commands.executeCommand(
       "setContext",
       SUGGESTION_CONTEXT,
-      items[0] !== undefined && isInsertItem(items[0]),
+      item !== undefined && isInsertItem(item),
     );
+    if (previewWhileBrowsing) {
+      clearTimeout(previewTimer);
+      if (item && isFileItem(item)) {
+        previewTimer = setTimeout(() => showPreview(item), PREVIEW_DELAY_MS);
+      }
+    }
   });
   quickPick.onDidChangeValue(render);
   await refresh();
 
-  const selected = await new Promise<FileQuickPickItem | undefined>(
+  const selected = await new Promise<Selection | undefined>(
     (resolve) => {
       let settled = false;
-      const settle = (value: FileQuickPickItem | undefined) => {
+      const settle = (value: Selection | undefined) => {
         if (settled) {
           return;
         }
         settled = true;
+        done = true;
+        clearTimeout(previewTimer);
         resolve(value);
       };
 
@@ -830,13 +1143,18 @@ const open = async (): Promise<void> => {
         if (!item || item.kind === QuickPickItemKind.Separator) {
           settle(undefined);
         } else {
-          settle(item as FileQuickPickItem);
+          settle({ item: item as FileQuickPickItem, view: enterAction });
         }
         quickPick.hide();
       });
 
       quickPick.onDidTriggerItemButton(async (event) => {
         const item = event.item as FileQuickPickItem;
+        if (event.button === viewButton.button) {
+          settle({ item, view: viewButton.view });
+          quickPick.hide();
+          return;
+        }
         try {
           if (event.button === stageButton) {
             await stageFile(item);
@@ -875,20 +1193,67 @@ const open = async (): Promise<void> => {
 
   quickPick.dispose();
 
+  // Escape, or a pick other than the previewed row: drop the preview tab, so
+  // the editor you were on comes back.
+  await previewQueue;
+  const keepsPreview =
+    selected !== undefined &&
+    preview?.key === previewKey(selected.item, selected.view);
+  if (preview?.tab && !keepsPreview) {
+    await closePreviewTab(preview.tab);
+  }
+
   if (!selected) {
     return;
   }
+  // A pinned tab, like Quick Open; this also keeps a previewed row's tab.
+  await openItem(selected.item, selected.view, { preview: false });
+};
 
-  if (selected.status === "D") {
-    commands.executeCommand("workbench.scm.focus");
+/**
+ * `path:line:column` of the cursor in the active editor, e.g. `README.md:13:12`.
+ * Lines and columns start at 1, and a tab counts as one column, like compiler
+ * output and terminal links.
+ */
+export const formatPosition = (
+  relativePath: string,
+  position: { line: number; character: number },
+): string => `${relativePath}:${position.line + 1}:${position.character + 1}`;
+
+const copyRelativePathWithPosition = async (): Promise<void> => {
+  const editor = window.activeTextEditor;
+  if (!editor) {
+    void window.showInformationMessage("Open a file to copy its path.");
     return;
   }
-  await window.showTextDocument(selected.uri);
+  // The workspace folder name is prepended only in multi-root workspaces;
+  // files outside the workspace keep their full path.
+  const relativePath = workspace.asRelativePath(editor.document.uri);
+  // With text selected, the cursor is the end of the selection you moved.
+  const text = formatPosition(relativePath, editor.selection.active);
+  await env.clipboard.writeText(text);
+  window.setStatusBarMessage(`Copied ${text}`, 3000);
+};
+
+/** Command Palette shortcuts (package.json) that open the picker pre-filtered. */
+const PRESET_QUERIES: Record<string, string> = {
+  "pick-changes.openStaged": "%staged",
+  "pick-changes.openUnstaged": "%unstaged",
+  "pick-changes.openConflicts": "%merge",
 };
 
 export function activate(context: ExtensionContext) {
   context.subscriptions.push(
-    commands.registerCommand("pick-changes.open", open),
+    commands.registerCommand("pick-changes.open", (args?: OpenArgs) =>
+      open(args),
+    ),
+    ...Object.entries(PRESET_QUERIES).map(([command, query]) =>
+      commands.registerCommand(command, () => open({ query })),
+    ),
+    commands.registerCommand(
+      "pick-changes.copyRelativePathWithPosition",
+      copyRelativePathWithPosition,
+    ),
     // Bound to Tab while a filter suggestion is highlighted (see package.json).
     commands.registerCommand("pick-changes.acceptSuggestion", () =>
       acceptActiveSuggestion?.(),

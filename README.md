@@ -8,12 +8,14 @@ Forked from [Quick Open Git Status](https://github.com/aki77/vscode-quick-open-g
 
 ## Usage
 
-Press `Cmd+G` `P` (`Ctrl+G` `P` on Windows/Linux), or run **Pick Git changes** from the Command Palette. Pick a file to open it.
+Press `Cmd+G` `P` (`Ctrl+G` `P` on Windows/Linux), or run **Pick Changes: All Git changes** from the Command Palette. Pick a file to open its diff, or click the **Open File** button on its row to open the file itself.
 
 ## Features
 
 - **Grouped like Source Control:** Merge Changes, Staged Changes and Changes. In multi-root workspaces, all repos appear in one list.
 - **Quick overview:** each row shows the file icon, name, folder, status and line counts, for example `src • M +12 -3`.
+- **Diff view:** picking a file opens its diff, like Source Control: staged files against `HEAD`, unstaged files against the index. Deleted files open their last version; untracked files and conflicts open as plain files. Hover over a row and click **Open File** to open the file itself, or make the file the default with the `pickChanges.enterAction` setting.
+- **Preview while browsing:** optionally, the highlighted row opens in a preview tab as you move through the list.
 - **Inline actions:** hover over a row to stage, unstage or discard it. Discard asks for confirmation first.
 - **Path search:** `src/ext` finds `src/extension.ts`. In multi-root workspaces, the path starts with the repo name, so `api/src` finds the files in `src` of the `api` repo.
 - **Filters:** show only the files of a repo, status or group, with live suggestions.
@@ -36,9 +38,36 @@ Mix filters and text: `#api %staged @m readme`.
 
 As you type a filter, suggestions show each matching value with its file count. Press **Tab** or **Enter** to pick one.
 
-## Shortcut
+## Commands
 
-The `Cmd+G` `P` shortcut replaces VS Code's **Find Next** (`Cmd+G`) on macOS. The `Ctrl+G` `P` shortcut replaces **Go to Line** (`Ctrl+G`) on Windows/Linux. To change it, open **Preferences: Open Keyboard Shortcuts** and search for `Pick Git changes`.
+| Command                                | Opens the picker with | Shortcut (macOS) | Shortcut (Windows/Linux) |
+| -------------------------------------- | --------------------- | ---------------- | ------------------------ |
+| **Pick Changes: All Git changes**      | no filter             | `Cmd+G` `P`      | `Ctrl+G` `P`             |
+| **Pick Changes: Staged Git changes**   | `%staged`             |                  |                          |
+| **Pick Changes: Unstaged Git changes** | `%unstaged`           | `Cmd+G` `U`      | `Ctrl+G` `U`             |
+| **Pick Changes: Git merge conflicts**  | `%merge`              |                  |                          |
+
+**Pick Changes: Copy Relative Path with Position** (`Cmd+G` `C` / `Ctrl+G` `C`) copies the active file's path and cursor position, like `README.md:13:12`. Lines and columns start at 1, and a tab counts as one column. In multi-root workspaces the path starts with the folder name.
+
+To open the picker with any query, bind `pick-changes.open` with a `query` argument in `keybindings.json`:
+
+```json
+{ "key": "cmd+g t", "command": "pick-changes.open", "args": { "query": "@untracked" } }
+```
+
+## Settings
+
+| Setting                            | Default | Description                                                                                                                              |
+| ---------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `pickChanges.enterAction`          | `diff`  | What **Enter** opens: `diff` (the row button opens the file) or `file` (the row button, **Open Changes**, opens the diff).                 |
+| `pickChanges.showLineCounts`       | `true`  | Show `+N -M` line counts on each row. Turn off to skip the `git diff` runs in very large repos.                                            |
+| `pickChanges.previewWhileBrowsing` | `false` | Open the highlighted row in a preview tab while you move through the list, like **Go to Symbol**. **Escape** closes it, **Enter** keeps it. |
+
+Untracked files and conflicts always open as files, and deleted files show their last version.
+
+## Shortcuts
+
+The shortcuts start with `Cmd+G` on macOS, which replaces VS Code's **Find Next** (`Cmd+G`), and with `Ctrl+G` on Windows/Linux, which replaces **Go to Line** (`Ctrl+G`). To change them, open **Preferences: Open Keyboard Shortcuts** and search for `Pick Changes`.
 
 ## Requirements
 
@@ -55,12 +84,15 @@ pnpm install
 Build the extension and open this folder in a VS Code window that runs it:
 
 ```sh
-pnpm run compile && code --extensionDevelopmentPath="$PWD" "$PWD"
+pnpm dev
 ```
 
-Run the tests and lint before opening a PR:
+Run the tests before opening a PR (this compiles and lints first):
 
 ```sh
 pnpm test
-pnpm run lint
 ```
+
+## Credits
+
+Icon: <a href="https://www.flaticon.com/free-icons/guitar-pick" title="guitar pick icons">Guitar pick icons created by Magnific - Flaticon</a>
