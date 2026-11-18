@@ -2,17 +2,23 @@ import * as assert from 'assert';
 import * as vscode from 'vscode';
 
 // Extension ID comes from package.json so renames don't break the tests.
-const manifest = require('../../package.json') as { publisher: string; name: string };
+const manifest = require('../../package.json') as {
+  publisher: string;
+  name: string;
+  contributes: { commands: { command: string }[] };
+};
 const extensionId = `${manifest.publisher}.${manifest.name}`;
 
 suite('Extension Test Suite', () => {
-  test('registers the pick-changes.open command', async () => {
+  test('registers every command in package.json', async () => {
     const extension = vscode.extensions.getExtension(extensionId);
     assert.ok(extension, 'extension should be installed in the test host');
     await extension.activate();
 
     const allCommands = await vscode.commands.getCommands(true);
-    assert.ok(allCommands.includes('pick-changes.open'));
+    for (const { command } of manifest.contributes.commands) {
+      assert.ok(allCommands.includes(command), `${command} should be registered`);
+    }
   });
 
   // The picker turns off the proposed `sortByLabel` so group dividers stay
@@ -24,6 +30,21 @@ suite('Extension Test Suite', () => {
     try {
       quickPick.sortByLabel = false;
       assert.strictEqual(quickPick.sortByLabel, false);
+    } finally {
+      quickPick.dispose();
+    }
+  });
+
+  // Pre-filled queries (e.g. `@untracked`) put the cursor at the end through
+  // the proposed `valueSelection`, so typing adds to the query.
+  test('accepts valueSelection on a Quick Pick without a proposal', () => {
+    const quickPick = vscode.window.createQuickPick() as vscode.QuickPick<vscode.QuickPickItem> & {
+      valueSelection: readonly [number, number];
+    };
+    try {
+      quickPick.value = '@untracked ';
+      quickPick.valueSelection = [11, 11];
+      assert.deepStrictEqual(quickPick.valueSelection, [11, 11]);
     } finally {
       quickPick.dispose();
     }

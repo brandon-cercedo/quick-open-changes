@@ -850,15 +850,52 @@ const keepSeparatorsWhileTyping = (quickPick: QuickPick<QuickPickItem>): void =>
   }
 };
 
+/**
+ * Puts the cursor after pre-filled text, so typing adds to the query instead
+ * of replacing it. By default a pre-filled Quick Pick value starts selected.
+ *
+ * Like `sortByLabel`, `valueSelection` on a Quick Pick is a proposed API
+ * (`valueSelectionInQuickPick`) whose setter VS Code doesn't gate. If that
+ * changes, the only loss is that the pre-filled text starts selected.
+ */
+const placeCursorAtEnd = (quickPick: QuickPick<QuickPickItem>): void => {
+  const end = quickPick.value.length;
+  try {
+    (
+      quickPick as QuickPick<QuickPickItem> & {
+        valueSelection: readonly [number, number];
+      }
+    ).valueSelection = [end, end];
+  } catch {
+    // Proposed API rejected: the pre-filled text starts selected.
+  }
+};
+
 /** The picked row, and whether to open the file or its diff. */
 type Selection = { item: FileQuickPickItem; view: "file" | "changes" };
 
-const open = async (): Promise<void> => {
+/**
+ * Arguments of `pick-changes.open`, e.g. from a keybinding:
+ * `"args": { "query": "@untracked" }` opens the picker with that filter typed in.
+ */
+type OpenArgs = { query?: unknown };
+
+/** Starting input: a finished query, so no filter suggestions pop up. */
+const initialQuery = (args: OpenArgs | undefined): string => {
+  const query = typeof args?.query === "string" ? args.query.trim() : "";
+  return query ? `${query} ` : "";
+};
+
+const open = async (args?: OpenArgs): Promise<void> => {
   const multiRoot = (workspace.workspaceFolders?.length ?? 0) > 1;
   const quickPick = window.createQuickPick();
   quickPick.matchOnDescription = true;
   quickPick.placeholder = PLACEHOLDER;
   keepSeparatorsWhileTyping(quickPick);
+  quickPick.value = initialQuery(args);
+  if (quickPick.value) {
+    placeCursorAtEnd(quickPick);
+  }
 
   let entries: ReadonlyArray<ChangeEntry> = [];
 
@@ -1004,9 +1041,21 @@ const open = async (): Promise<void> => {
   await openChanges(item);
 };
 
+/** Command Palette shortcuts (package.json) that open the picker pre-filtered. */
+const PRESET_QUERIES: Record<string, string> = {
+  "pick-changes.openStaged": "%staged",
+  "pick-changes.openUnstaged": "%unstaged",
+  "pick-changes.openConflicts": "%merge",
+};
+
 export function activate(context: ExtensionContext) {
   context.subscriptions.push(
-    commands.registerCommand("pick-changes.open", open),
+    commands.registerCommand("pick-changes.open", (args?: OpenArgs) =>
+      open(args),
+    ),
+    ...Object.entries(PRESET_QUERIES).map(([command, query]) =>
+      commands.registerCommand(command, () => open({ query })),
+    ),
     // Bound to Tab while a filter suggestion is highlighted (see package.json).
     commands.registerCommand("pick-changes.acceptSuggestion", () =>
       acceptActiveSuggestion?.(),

@@ -8,7 +8,7 @@ Forked from [Quick Open Git Status](https://github.com/aki77/vscode-quick-open-g
 
 ## Usage
 
-Press `Cmd+G` `P` (`Ctrl+G` `P` on Windows/Linux), or run **Pick Git changes** from the Command Palette. Pick a file to open its diff, or click the **Open File** button on its row to open the file itself.
+Press `Cmd+G` `P` (`Ctrl+G` `P` on Windows/Linux), or run **Pick Changes: All Git changes** from the Command Palette. Pick a file to open its diff, or click the **Open File** button on its row to open the file itself.
 
 ## Features
 
@@ -37,9 +37,24 @@ Mix filters and text: `#api %staged @m readme`.
 
 As you type a filter, suggestions show each matching value with its file count. Press **Tab** or **Enter** to pick one.
 
-## Shortcut
+## Commands
 
-The `Cmd+G` `P` shortcut replaces VS Code's **Find Next** (`Cmd+G`) on macOS. The `Ctrl+G` `P` shortcut replaces **Go to Line** (`Ctrl+G`) on Windows/Linux. To change it, open **Preferences: Open Keyboard Shortcuts** and search for `Pick Git changes`.
+| Command                                | Opens the picker with | Shortcut (macOS) | Shortcut (Windows/Linux) |
+| -------------------------------------- | --------------------- | ---------------- | ------------------------ |
+| **Pick Changes: All Git changes**      | no filter             | `Cmd+G` `P`      | `Ctrl+G` `P`             |
+| **Pick Changes: Staged Git changes**   | `%staged`             |                  |                          |
+| **Pick Changes: Unstaged Git changes** | `%unstaged`           | `Cmd+G` `U`      | `Ctrl+G` `U`             |
+| **Pick Changes: Git merge conflicts**  | `%merge`              |                  |                          |
+
+To open the picker with any query, bind `pick-changes.open` with a `query` argument in `keybindings.json`:
+
+```json
+{ "key": "cmd+g t", "command": "pick-changes.open", "args": { "query": "@untracked" } }
+```
+
+## Shortcuts
+
+The shortcuts start with `Cmd+G` on macOS, which replaces VS Code's **Find Next** (`Cmd+G`), and with `Ctrl+G` on Windows/Linux, which replaces **Go to Line** (`Ctrl+G`). To change them, open **Preferences: Open Keyboard Shortcuts** and search for `Pick Changes`.
 
 ## Requirements
 

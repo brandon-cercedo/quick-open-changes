@@ -25,11 +25,28 @@
     "commands": [
       {
         "command": "pick-changes.open",
-        "title": "Pick Git changes"
+        "title": "All Git changes",
+        "category": "Pick Changes"
+      },
+      {
+        "command": "pick-changes.openStaged",
+        "title": "Staged Git changes",
+        "category": "Pick Changes"
+      },
+      {
+        "command": "pick-changes.openUnstaged",
+        "title": "Unstaged Git changes",
+        "category": "Pick Changes"
+      },
+      {
+        "command": "pick-changes.openConflicts",
+        "title": "Git merge conflicts",
+        "category": "Pick Changes"
       },
       {
         "command": "pick-changes.acceptSuggestion",
-        "title": "Accept Filter Suggestion"
+        "title": "Accept Filter Suggestion",
+        "category": "Pick Changes"
       }
     ],
     "menus": {
@@ -45,6 +62,11 @@
         "command": "pick-changes.open",
         "key": "ctrl+g p",
         "mac": "cmd+g p"
+      },
+      {
+        "command": "pick-changes.openUnstaged",
+        "key": "ctrl+g u",
+        "mac": "cmd+g u"
       },
       {
         "key": "tab",
