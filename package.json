@@ -21,7 +21,7 @@
   "bugs": {
     "url": "https://github.com/brandon-cercedo/quick-open-changes/issues"
   },
-  "main": "./out/extension.js",
+  "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
@@ -117,11 +117,14 @@
   "scripts": {
     "compile": "tsc -p ./",
     "compile:watch": "tsc -watch -p ./",
-    "vscode:prepublish": "pnpm compile",
-    "dev": "pnpm compile && code --extensionDevelopmentPath=\"$PWD\" \"$PWD\"",
+    "bundle": "node esbuild.mjs",
+    "bundle:watch": "node esbuild.mjs --watch",
+    "dev": "pnpm bundle && code --extensionDevelopmentPath=\"$PWD\" \"$PWD\"",
     "lint": "eslint src",
-    "test": "pnpm compile && pnpm lint && vscode-test",
-    "package": "vsce package"
+    "type:check": "tsc -p ./ --noEmit",
+    "test": "pnpm compile && pnpm lint && pnpm bundle && vscode-test",
+    "vscode:prepublish": "pnpm type:check && node esbuild.mjs --production",
+    "package": "vsce package --no-dependencies"
   },
   "dependencies": {
     "simple-git": "^4.0.2",
@@ -134,6 +137,7 @@
     "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^4.1.0",
+    "esbuild": "^0.28.2",
     "eslint": "^10.14.0",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.72.1"

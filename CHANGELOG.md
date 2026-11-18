@@ -6,6 +6,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [0.4.0]
 
+- Bundle the extension with esbuild into a single file: a much smaller package and faster startup
 - Add an extension icon
 - Add settings: `pickChanges.enterAction` (`diff` or `file`), `pickChanges.showLineCounts` and `pickChanges.previewWhileBrowsing`
 - With `pickChanges.enterAction` set to `file`, the row button becomes **Open Changes**
