@@ -3,6 +3,10 @@
   "displayName": "Pick Changes",
   "description": "Open, stage and filter your git changes from a Quick Pick. Forked from Quick Open Git Status.",
   "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#FFC83D",
+    "theme": "light"
+  },
   "version": "0.4.0",
   "publisher": "brandon-cercedo",
   "license": "MIT",
@@ -13,6 +17,12 @@
   "categories": [
     "Other",
     "Visualization"
+  ],
+  "keywords": [
+    "git",
+    "changes",
+    "pick",
+    "diff"
   ],
   "repository": {
     "type": "git",
