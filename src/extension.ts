@@ -1,6 +1,7 @@
 import {
   commands,
   ExtensionContext,
+  extensions,
   QuickInputButton,
   QuickPick,
   QuickPickItem,
@@ -45,6 +46,8 @@ type ChangeEntry = {
   status: string;
   relativePath: string;
   uri: Uri;
+  /** Path before a staged rename: the diff's left side comes from here at HEAD. */
+  originalUri?: Uri;
   folderName: string;
   workspacePath: string;
   stats?: DiffStats;
@@ -53,9 +56,15 @@ type ChangeEntry = {
 type FileQuickPickItem = QuickPickItem & {
   group: ChangeGroup;
   uri: Uri;
+  originalUri?: Uri;
   status: string;
   relativePath: string;
   workspacePath: string;
+};
+
+const openFileButton: QuickInputButton = {
+  iconPath: new ThemeIcon("go-to-file"),
+  tooltip: "Open File",
 };
 
 const stageButton: QuickInputButton = {
@@ -207,6 +216,10 @@ const gitStatusForFolder = async (
           ...base,
           group: "staged",
           status: file.index,
+          originalUri:
+            file.index === "R" && file.from
+              ? Uri.joinPath(workspaceFolder.uri, file.from)
+              : undefined,
           stats: stagedStats.get(file.path),
         });
       }
@@ -242,6 +255,98 @@ const gitStatus = async (): Promise<ReadonlyArray<ChangeEntry>> => {
   return results.flat();
 };
 
+// --- Diff view -----------------------------------------------------------------
+// Diffs use the built-in Git extension's `git:` URIs, the same ones the Source
+// Control view opens, so a diff opened here reuses the same editor tab.
+
+/** The one method used from the Git extension API (`vscode.git`, version 1). */
+type GitApi = { toGitUri(uri: Uri, ref: string): Uri };
+
+/** `git:` ref for the index version of a file. */
+const INDEX_REF = "";
+
+const getGitApi = async (): Promise<GitApi | undefined> => {
+  const extension = extensions.getExtension<{ getAPI(version: 1): GitApi }>(
+    "vscode.git",
+  );
+  if (!extension) {
+    return undefined;
+  }
+  try {
+    const exports = extension.isActive
+      ? extension.exports
+      : await extension.activate();
+    return exports.getAPI(1);
+  } catch {
+    // Throws when Git is turned off (`git.enabled: false`).
+    return undefined;
+  }
+};
+
+/** Untracked files and conflicts have no diff: they open as plain files. */
+const hasChanges = (entry: { group: ChangeGroup; status: string }): boolean =>
+  entry.group !== "merge" && entry.status !== "U";
+
+/**
+ * Rows whose Enter (diff) differs from the file on disk. Deleted files have no
+ * file to open, and rows without a diff already open the file on Enter.
+ */
+const hasOpenFileButton = (entry: {
+  group: ChangeGroup;
+  status: string;
+}): boolean => hasChanges(entry) && entry.status !== "D";
+
+/**
+ * Opens a row the way the Source Control view does: staged rows compare HEAD
+ * with the index, unstaged rows compare the index with the working tree.
+ * Added and deleted files have only one side, so that side opens on its own.
+ */
+const openChanges = async (item: FileQuickPickItem): Promise<void> => {
+  if (!hasChanges(item)) {
+    await window.showTextDocument(item.uri);
+    return;
+  }
+  const git = await getGitApi();
+  if (!git) {
+    void window.showWarningMessage(
+      "Can't open changes: the built-in Git extension is disabled.",
+    );
+    return;
+  }
+
+  const name = path.basename(item.relativePath);
+  const index = git.toGitUri(item.uri, INDEX_REF);
+  const openSide = (uri: Uri, label: string) =>
+    commands.executeCommand("vscode.open", uri, {}, `${name} (${label})`);
+  const openDiff = (left: Uri, right: Uri, label: string) =>
+    commands.executeCommand("vscode.diff", left, right, `${name} (${label})`);
+
+  if (item.group === "staged") {
+    switch (item.status) {
+      case "A":
+      case "C":
+        await openSide(index, "Index");
+        return;
+      case "D":
+        await openSide(git.toGitUri(item.uri, "HEAD"), "Deleted");
+        return;
+      default:
+        await openDiff(
+          git.toGitUri(item.originalUri ?? item.uri, "HEAD"),
+          index,
+          "Index",
+        );
+        return;
+    }
+  }
+
+  if (item.status === "D") {
+    await openSide(index, "Deleted");
+    return;
+  }
+  await openDiff(index, item.uri, "Working Tree");
+};
+
 const toFileItem = (
   entry: ChangeEntry,
   alwaysShow: boolean,
@@ -252,13 +357,16 @@ const toFileItem = (
   description: formatDescription(entry.relativePath, entry.status, entry.stats),
   group: entry.group,
   uri: entry.uri,
+  originalUri: entry.originalUri,
   status: entry.status,
   relativePath: entry.relativePath,
   workspacePath: entry.workspacePath,
   // File icon theme icon: needs ThemeIcon.File + resourceUri together (VS Code 1.108+).
   iconPath: ThemeIcon.File,
   resourceUri: entry.uri,
-  buttons: GROUP_BUTTONS[entry.group],
+  buttons: hasOpenFileButton(entry)
+    ? [openFileButton, ...GROUP_BUTTONS[entry.group]]
+    : GROUP_BUTTONS[entry.group],
   // Set when the extension filters rows itself, so Quick Pick doesn't re-filter them.
   alwaysShow,
 });
@@ -742,6 +850,9 @@ const keepSeparatorsWhileTyping = (quickPick: QuickPick<QuickPickItem>): void =>
   }
 };
 
+/** The picked row, and whether to open the file or its diff. */
+type Selection = { item: FileQuickPickItem; view: "file" | "changes" };
+
 const open = async (): Promise<void> => {
   const multiRoot = (workspace.workspaceFolders?.length ?? 0) > 1;
   const quickPick = window.createQuickPick();
@@ -810,10 +921,10 @@ const open = async (): Promise<void> => {
   quickPick.onDidChangeValue(render);
   await refresh();
 
-  const selected = await new Promise<FileQuickPickItem | undefined>(
+  const selected = await new Promise<Selection | undefined>(
     (resolve) => {
       let settled = false;
-      const settle = (value: FileQuickPickItem | undefined) => {
+      const settle = (value: Selection | undefined) => {
         if (settled) {
           return;
         }
@@ -830,13 +941,18 @@ const open = async (): Promise<void> => {
         if (!item || item.kind === QuickPickItemKind.Separator) {
           settle(undefined);
         } else {
-          settle(item as FileQuickPickItem);
+          settle({ item: item as FileQuickPickItem, view: "changes" });
         }
         quickPick.hide();
       });
 
       quickPick.onDidTriggerItemButton(async (event) => {
         const item = event.item as FileQuickPickItem;
+        if (event.button === openFileButton) {
+          settle({ item, view: "file" });
+          quickPick.hide();
+          return;
+        }
         try {
           if (event.button === stageButton) {
             await stageFile(item);
@@ -879,11 +995,13 @@ const open = async (): Promise<void> => {
     return;
   }
 
-  if (selected.status === "D") {
-    commands.executeCommand("workbench.scm.focus");
+  const { item, view } = selected;
+  if (view === "file") {
+    await window.showTextDocument(item.uri);
     return;
   }
-  await window.showTextDocument(selected.uri);
+  // Untracked files and conflicts have no diff, so this opens the file itself.
+  await openChanges(item);
 };
 
 export function activate(context: ExtensionContext) {

@@ -8,12 +8,13 @@ Forked from [Quick Open Git Status](https://github.com/aki77/vscode-quick-open-g
 
 ## Usage
 
-Press `Cmd+G` `P` (`Ctrl+G` `P` on Windows/Linux), or run **Pick Git changes** from the Command Palette. Pick a file to open it.
+Press `Cmd+G` `P` (`Ctrl+G` `P` on Windows/Linux), or run **Pick Git changes** from the Command Palette. Pick a file to open its diff, or click the **Open File** button on its row to open the file itself.
 
 ## Features
 
 - **Grouped like Source Control:** Merge Changes, Staged Changes and Changes. In multi-root workspaces, all repos appear in one list.
 - **Quick overview:** each row shows the file icon, name, folder, status and line counts, for example `src • M +12 -3`.
+- **Diff view:** picking a file opens its diff, like Source Control: staged files against `HEAD`, unstaged files against the index. Deleted files open their last version; untracked files and conflicts open as plain files. Hover over a row and click **Open File** to open the file itself.
 - **Inline actions:** hover over a row to stage, unstage or discard it. Discard asks for confirmation first.
 - **Path search:** `src/ext` finds `src/extension.ts`. In multi-root workspaces, the path starts with the repo name, so `api/src` finds the files in `src` of the `api` repo.
 - **Filters:** show only the files of a repo, status or group, with live suggestions.
